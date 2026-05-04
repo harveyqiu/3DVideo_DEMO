@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Head Tracked Canvas Collage</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="panel panel-left" aria-label="场景工具">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div>
+            <h1>三维拼贴</h1>
+            <p>Canvas 透视空间</p>
+          </div>
+        </div>
+
+        <div class="tool-group">
+          <label class="file-button">
+            <input id="fileInput" type="file" accept="image/png,image/gif" multiple />
+            <span>导入 PNG / GIF</span>
+          </label>
+          <button id="cameraButton" type="button">开启摄像头跟随</button>
+          <button id="autoLayoutButton" type="button">自动三维布局</button>
+          <button id="exportButton" type="button">导出当前画面</button>
+        </div>
+
+        <div class="tool-group compact">
+          <label>
+            <span>透视强度</span>
+            <input id="focalRange" type="range" min="520" max="1300" value="860" />
+          </label>
+          <label>
+            <span>头动幅度</span>
+            <input id="parallaxRange" type="range" min="0" max="180" value="92" />
+          </label>
+          <label>
+            <span>空间网格</span>
+            <input id="gridToggle" type="checkbox" checked />
+          </label>
+        </div>
+
+        <div class="tracker-card">
+          <video id="cameraPreview" autoplay playsinline muted></video>
+          <div>
+            <strong id="trackingState">未连接摄像头</strong>
+            <span id="trackingMeta">等待视觉输入</span>
+          </div>
+        </div>
+        <div class="camera-tools">
+          <select id="cameraSelect" aria-label="选择摄像头">
+            <option value="">默认摄像头</option>
+          </select>
+          <span id="cameraDiagnostics">尚未检测视频帧</span>
+        </div>
+      </aside>
+
+      <main class="stage-wrap">
+        <canvas id="stage" aria-label="三维拼贴画布"></canvas>
+      </main>
+
+      <aside class="panel panel-right" aria-label="图片参数">
+        <div class="section-title">
+          <h2>图片层</h2>
+          <button id="deleteButton" type="button" title="删除选中图片">删除</button>
+        </div>
+        <div id="layerList" class="layer-list"></div>
+
+        <div class="section-title">
+          <h2>位置</h2>
+        </div>
+        <div class="control-grid">
+          <label>
+            <span>X</span>
+            <input id="xRange" type="range" min="-520" max="520" value="0" />
+          </label>
+          <label>
+            <span>Y</span>
+            <input id="yRange" type="range" min="-320" max="320" value="0" />
+          </label>
+          <label>
+            <span>深度</span>
+            <input id="zRange" type="range" min="-260" max="980" value="0" />
+          </label>
+          <label>
+            <span>大小</span>
+            <input id="scaleRange" type="range" min="30" max="180" value="100" />
+          </label>
+          <label>
+            <span>旋转</span>
+            <input id="rotationRange" type="range" min="-35" max="35" value="0" />
+          </label>
+          <label>
+            <span>倾斜</span>
+            <input id="tiltRange" type="range" min="-45" max="45" value="0" />
+          </label>
+        </div>
+      </aside>
+    </div>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
