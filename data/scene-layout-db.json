@@ -1,0 +1,203 @@
+{
+  "layouts": {
+    "default": {
+      "name": "场景2",
+      "payload": {
+        "id": "default",
+        "name": "场景2",
+        "scene": {
+          "focal": 900,
+          "parallax": 74,
+          "showGrid": true
+        },
+        "items": [
+          {
+            "id": "24529146-3fd8-499f-af27-b981d6ce2281",
+            "name": "1.gif",
+            "assetKey": "uploads/1.gif",
+            "assetUrl": "/uploads/1.gif",
+            "assetType": "image/gif",
+            "x": 160,
+            "y": -34,
+            "z": -220,
+            "scale": 0.96,
+            "rotation": 0,
+            "tilt": 0.41887902047863906,
+            "alpha": 1
+          },
+          {
+            "id": "cf3db4fc-3d5e-4723-81b1-e109ec929c83",
+            "name": "2.gif",
+            "assetKey": "uploads/2.gif",
+            "assetUrl": "/uploads/2.gif",
+            "assetType": "image/gif",
+            "x": -58.951508892330224,
+            "y": 89.74304475965972,
+            "z": 73.33333333333331,
+            "scale": 0.8666666666666666,
+            "rotation": 0.20244305602563878,
+            "tilt": 0.1196976334391943,
+            "alpha": 1
+          },
+          {
+            "id": "6d74570c-db33-4270-80b4-f0ab5c6f21dd",
+            "name": "3.gif",
+            "assetKey": "uploads/3.gif",
+            "assetUrl": "/uploads/3.gif",
+            "assetType": "image/gif",
+            "x": -260.58283099414945,
+            "y": -120.71802152001337,
+            "z": 331.66666666666663,
+            "scale": 0.8352,
+            "rotation": -0.10377672710857347,
+            "tilt": -0.3504701350941567,
+            "alpha": 0.78
+          },
+          {
+            "id": "b26a7bb6-6ee2-4f1f-b908-dc6850bb1b5c",
+            "name": "4.gif",
+            "assetKey": "uploads/4.gif",
+            "assetUrl": "/uploads/4.gif",
+            "assetType": "image/gif",
+            "x": 259.58425050968685,
+            "y": 60.01513399756563,
+            "z": 660,
+            "scale": 0.6799999999999999,
+            "rotation": -0.1492448416694823,
+            "tilt": -0.3199962576765691,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-04T13:30:51.578Z"
+    },
+    "场景2-mor6tak1": {
+      "name": "场景2",
+      "payload": {
+        "id": "场景2-mor6tak1",
+        "name": "场景2",
+        "scene": {
+          "focal": 720,
+          "parallax": 154,
+          "showGrid": true
+        },
+        "items": [
+          {
+            "id": "24529146-3fd8-499f-af27-b981d6ce2281",
+            "name": "1.gif",
+            "assetKey": "uploads/1.gif",
+            "assetUrl": "/uploads/1.gif",
+            "assetType": "image/gif",
+            "x": 160,
+            "y": -34,
+            "z": -255,
+            "scale": 1.0368,
+            "rotation": 0,
+            "tilt": 0.41887902047863906,
+            "alpha": 1
+          },
+          {
+            "id": "cf3db4fc-3d5e-4723-81b1-e109ec929c83",
+            "name": "2.gif",
+            "assetKey": "uploads/2.gif",
+            "assetUrl": "/uploads/2.gif",
+            "assetType": "image/gif",
+            "x": -58.951508892330224,
+            "y": 89.74304475965972,
+            "z": 73.33333333333331,
+            "scale": 0.8666666666666666,
+            "rotation": 0.20244305602563878,
+            "tilt": 0.1196976334391943,
+            "alpha": 1
+          },
+          {
+            "id": "6d74570c-db33-4270-80b4-f0ab5c6f21dd",
+            "name": "3.gif",
+            "assetKey": "uploads/3.gif",
+            "assetUrl": "/uploads/3.gif",
+            "assetType": "image/gif",
+            "x": -260.58283099414945,
+            "y": -120.71802152001337,
+            "z": 366.66666666666663,
+            "scale": 0.7733333333333333,
+            "rotation": -0.10377672710857347,
+            "tilt": -0.3504701350941567,
+            "alpha": 1
+          },
+          {
+            "id": "b26a7bb6-6ee2-4f1f-b908-dc6850bb1b5c",
+            "name": "4.gif",
+            "assetKey": "uploads/4.gif",
+            "assetUrl": "/uploads/4.gif",
+            "assetType": "image/gif",
+            "x": 259.58425050968685,
+            "y": 60.01513399756563,
+            "z": 660,
+            "scale": 0.6799999999999999,
+            "rotation": -0.1492448416694823,
+            "tilt": -0.3199962576765691,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-04T14:23:08.646Z"
+    },
+    "场景1-mor7l503": {
+      "name": "场景1",
+      "payload": {
+        "id": "场景1-mor7l503",
+        "name": "场景1",
+        "scene": {
+          "focal": 904,
+          "parallax": 79,
+          "showGrid": true
+        },
+        "items": [
+          {
+            "id": "24529146-3fd8-499f-af27-b981d6ce2281",
+            "name": "1.gif",
+            "assetKey": "uploads/1.gif",
+            "assetUrl": "/uploads/1.gif",
+            "assetType": "image/gif",
+            "x": 166.39999999999998,
+            "y": 43,
+            "z": -16,
+            "scale": 0.9564480000000001,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "cf3db4fc-3d5e-4723-81b1-e109ec929c83",
+            "name": "2.gif",
+            "assetKey": "uploads/2.gif",
+            "assetUrl": "/uploads/2.gif",
+            "assetType": "image/gif",
+            "x": 10,
+            "y": 83,
+            "z": 168,
+            "scale": 0.81,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "6d74570c-db33-4270-80b4-f0ab5c6f21dd",
+            "name": "3.gif",
+            "assetKey": "uploads/3.gif",
+            "assetUrl": "/uploads/3.gif",
+            "assetType": "image/gif",
+            "x": 384.79999999999995,
+            "y": 131,
+            "z": 314,
+            "scale": 1.06,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-04T13:59:27.866Z"
+    }
+  }
+}

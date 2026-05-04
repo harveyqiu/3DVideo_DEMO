@@ -1,18 +1,41 @@
 const canvas = document.querySelector("#stage");
 const ctx = canvas.getContext("2d", { alpha: false });
+const appMode = document.body.dataset.mode || "editor";
+const isViewer = appMode === "viewer";
 
 const ui = {
   fileInput: document.querySelector("#fileInput"),
   cameraButton: document.querySelector("#cameraButton"),
   autoLayoutButton: document.querySelector("#autoLayoutButton"),
+  saveLayoutButton: document.querySelector("#saveLayoutButton"),
+  saveAsLayoutButton: document.querySelector("#saveAsLayoutButton"),
+  sceneSelect: document.querySelector("#sceneSelect"),
+  sceneNameInput: document.querySelector("#sceneNameInput"),
   exportButton: document.querySelector("#exportButton"),
   deleteButton: document.querySelector("#deleteButton"),
   layerList: document.querySelector("#layerList"),
+  mediaOverlay: document.querySelector("#mediaOverlay"),
   cameraPreview: document.querySelector("#cameraPreview"),
   cameraSelect: document.querySelector("#cameraSelect"),
   cameraDiagnostics: document.querySelector("#cameraDiagnostics"),
   trackingState: document.querySelector("#trackingState"),
   trackingMeta: document.querySelector("#trackingMeta"),
+  voiceButton: document.querySelector("#voiceButton"),
+  voiceStatus: document.querySelector("#voiceStatus"),
+  voiceTranscript: document.querySelector("#voiceTranscript"),
+  voiceReply: document.querySelector("#voiceReply"),
+  voiceCaptionPreview: document.querySelector("#voiceCaptionPreview"),
+  voiceTextInput: document.querySelector("#voiceTextInput"),
+  voiceTextSendButton: document.querySelector("#voiceTextSendButton"),
+  micLevelButton: document.querySelector("#micLevelButton"),
+  micLevelBar: document.querySelector("#micLevelBar"),
+  micLevelStatus: document.querySelector("#micLevelStatus"),
+  kimiRequestDebug: document.querySelector("#kimiRequestDebug"),
+  kimiResponseDebug: document.querySelector("#kimiResponseDebug"),
+  scriptBeatSelect: document.querySelector("#scriptBeatSelect"),
+  stageSubtitle: document.querySelector("#stageSubtitle"),
+  tabButtons: document.querySelectorAll("[data-tab-target]"),
+  tabPages: document.querySelectorAll(".tab-page"),
   focalRange: document.querySelector("#focalRange"),
   parallaxRange: document.querySelector("#parallaxRange"),
   gridToggle: document.querySelector("#gridToggle"),
@@ -22,6 +45,18 @@ const ui = {
   scaleRange: document.querySelector("#scaleRange"),
   rotationRange: document.querySelector("#rotationRange"),
   tiltRange: document.querySelector("#tiltRange"),
+  layoutStatus: document.querySelector("#layoutStatus"),
+  viewerStartButton: document.querySelector("#viewerStartButton"),
+  values: {
+    focalRange: document.querySelector("#focalValue"),
+    parallaxRange: document.querySelector("#parallaxValue"),
+    xRange: document.querySelector("#xValue"),
+    yRange: document.querySelector("#yValue"),
+    zRange: document.querySelector("#zValue"),
+    scaleRange: document.querySelector("#scaleValue"),
+    rotationRange: document.querySelector("#rotationValue"),
+    tiltRange: document.querySelector("#tiltValue"),
+  },
 };
 
 const state = {
@@ -42,29 +77,92 @@ const state = {
   blackFrameCount: 0,
   tracker: null,
   dragging: null,
+  layoutSaveTimer: null,
+  currentSceneId: new URLSearchParams(window.location.search).get("scene") || "default",
+  currentSceneName: "默认场景",
+  scenes: [],
+  loadingScene: true,
+  gifElements: new Map(),
+  voice: {
+    recognition: null,
+    listening: false,
+    busy: false,
+    conversation: [],
+    directorEndpoint: "/api/director-cue",
+    micStream: null,
+    micAudioContext: null,
+    micAnalyser: null,
+    micLevelTimer: null,
+    micMonitoring: false,
+    minListenMs: 10000,
+    listenStartedAt: 0,
+    listenStopTimer: null,
+    manualStop: false,
+    transcriptBuffer: "",
+    interimTranscript: "",
+    restartingRecognition: false,
+  },
 };
 
-const controls = [
-  ["xRange", "x", Number],
-  ["yRange", "y", Number],
-  ["zRange", "z", Number],
-  ["scaleRange", "scale", (value) => Number(value) / 100],
-  ["rotationRange", "rotation", (value) => degreesToRadians(Number(value))],
-  ["tiltRange", "tilt", (value) => degreesToRadians(Number(value))],
-];
+const scriptBeats = {
+  opening: {
+    title: "生存：醒来后的第一天",
+    next: "choice",
+    direction:
+      "用户刚在荒岛上醒来。夏仁要压住恐慌，立刻把对话拉到水、火、庇护所这些生存任务上。",
+  },
+  choice: {
+    title: "合作：分配任务",
+    next: "reveal",
+    direction:
+      "双方开始合作，但夏仁要主导节奏。频繁给封闭式选择，观察用户是否服从。",
+  },
+  reveal: {
+    title: "冲突：资源变少",
+    next: "ending",
+    direction:
+      "资源开始紧张。夏仁的语气更有判断和不耐烦，要制造信任裂痕，但不能直接暴露背叛。",
+  },
+  ending: {
+    title: "背叛：船只能载一个人",
+    next: "opening",
+    direction:
+      "造船或离岛阶段必须提到船只能载一个人。夏仁不解释太多，用现实压制用户。",
+  },
+};
+
+const rangeConfigs = {
+  focalRange: { stateKey: "focal", min: 520, max: 1300 },
+  parallaxRange: { stateKey: "parallax", min: 0, max: 180 },
+  xRange: { itemKey: "x", min: -520, max: 520, neutral: 50 },
+  yRange: { itemKey: "y", min: -320, max: 320, neutral: 50 },
+  zRange: { itemKey: "z", min: -260, max: 980 },
+  scaleRange: { itemKey: "scale", min: 0.3, max: 1.8 },
+  rotationRange: { itemKey: "rotation", min: degreesToRadians(-35), max: degreesToRadians(35), neutral: 50 },
+  tiltRange: { itemKey: "tilt", min: degreesToRadians(-45), max: degreesToRadians(45), neutral: 50 },
+};
+
+const controls = ["xRange", "yRange", "zRange", "scaleRange", "rotationRange", "tiltRange"];
 
 init();
 
-function init() {
-  seedDemoImages();
+async function init() {
   bindEvents();
   resize();
+  await loadInitialScene();
   syncControls();
   requestAnimationFrame(draw);
+  if (isViewer) {
+    ui.viewerStartButton?.addEventListener("click", () => startCamera());
+  }
 }
 
 function bindEvents() {
   window.addEventListener("resize", resize);
+
+  ui.tabButtons.forEach((button) => {
+    button.addEventListener("click", () => activateTab(button.dataset.tabTarget));
+  });
 
   ui.fileInput.addEventListener("change", async (event) => {
     await addFiles([...event.target.files]);
@@ -88,27 +186,50 @@ function bindEvents() {
     autoLayout();
     syncControls();
     renderLayerList();
+    scheduleSaveLayout();
   });
 
   ui.exportButton.addEventListener("click", exportFrame);
   ui.deleteButton.addEventListener("click", deleteSelected);
+  ui.saveLayoutButton?.addEventListener("click", () => saveLayoutNow());
+  ui.saveAsLayoutButton?.addEventListener("click", () => saveAsLayout());
+  ui.sceneSelect?.addEventListener("change", () => switchScene(ui.sceneSelect.value));
+  ui.voiceButton.addEventListener("click", toggleVoiceListening);
+  ui.voiceTextSendButton?.addEventListener("click", () => sendManualVoiceText());
+  ui.micLevelButton?.addEventListener("click", () => toggleMicLevelMonitor());
+  ui.voiceTextInput?.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      sendManualVoiceText();
+    }
+  });
+  ui.scriptBeatSelect.addEventListener("change", () => {
+    setVoiceStatus(`已切换到：${getCurrentBeat().title}`);
+  });
 
   ui.focalRange.addEventListener("input", () => {
-    state.focal = Number(ui.focalRange.value);
+    state.focal = rangeToValue("focalRange", ui.focalRange.value);
+    updateRangeDisplays();
+    scheduleSaveLayout();
   });
   ui.parallaxRange.addEventListener("input", () => {
-    state.parallax = Number(ui.parallaxRange.value);
+    state.parallax = rangeToValue("parallaxRange", ui.parallaxRange.value);
+    updateRangeDisplays();
+    scheduleSaveLayout();
   });
   ui.gridToggle.addEventListener("change", () => {
     state.showGrid = ui.gridToggle.checked;
+    scheduleSaveLayout();
   });
 
-  for (const [id, key, parse] of controls) {
+  for (const id of controls) {
     ui[id].addEventListener("input", () => {
       const selected = getSelected();
       if (!selected) return;
-      selected[key] = parse(ui[id].value);
+      selected[rangeConfigs[id].itemKey] = rangeToValue(id, ui[id].value);
+      updateRangeDisplays();
       renderLayerList();
+      scheduleSaveLayout();
     });
   }
 
@@ -127,6 +248,7 @@ function bindEvents() {
     selected.y = state.dragging.startY + (event.clientY - state.dragging.clientY) / depthScale;
     syncControls();
     renderLayerList();
+    scheduleSaveLayout();
   });
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -162,6 +284,7 @@ function bindEvents() {
       selected.z = clamp(selected.z + event.deltaY * 0.45, -260, 980);
       syncControls();
       renderLayerList();
+      scheduleSaveLayout();
     },
     { passive: false },
   );
@@ -178,46 +301,150 @@ function resize() {
 }
 
 async function addFiles(files) {
-  const valid = files.filter((file) => /image\/(png|gif)/.test(file.type));
-  const loaded = await Promise.all(valid.map(loadItemFromFile));
-  const baseIndex = state.items.length;
-  loaded.forEach((item, index) => {
-    const angle = (baseIndex + index) * 1.17;
-    Object.assign(item, {
-      x: Math.cos(angle) * 190,
-      y: Math.sin(angle * 0.8) * 105,
-      z: -120 + ((baseIndex + index) % 6) * 180,
-      scale: 0.82 + ((baseIndex + index) % 3) * 0.12,
-      rotation: degreesToRadians(((baseIndex + index) % 5 - 2) * 5),
-      tilt: degreesToRadians(((baseIndex + index) % 4 - 1.5) * 11),
-    });
-    state.items.push(item);
-    state.selectedId = item.id;
-  });
+  const valid = files.filter(isSupportedMediaFile);
+  let nextIndex = state.items.length;
+
+  for (const file of valid) {
+    const asset = await uploadAsset(file).catch(() => localAssetFromFile(file));
+
+    if (isVideoAsset(asset)) {
+      const item = createPendingVideoItem(asset);
+      placeNewItem(item, nextIndex);
+      nextIndex += 1;
+      state.items.push(item);
+      state.selectedId = item.id;
+      hydrateVideoItem(asset, item);
+      scheduleSaveLayout();
+      continue;
+    }
+
+    try {
+      const item = await loadImageItemFromAsset(asset);
+      placeNewItem(item, nextIndex);
+      nextIndex += 1;
+      state.items.push(item);
+      state.selectedId = item.id;
+      scheduleSaveLayout();
+    } catch {
+      const item = createPlaceholderItem(file.name, "图片无法加载", "image");
+      placeNewItem(item, nextIndex);
+      nextIndex += 1;
+      state.items.push(item);
+      state.selectedId = item.id;
+      scheduleSaveLayout();
+    }
+  }
+
   syncControls();
   renderLayerList();
 }
 
-function loadItemFromFile(file) {
+function loadImageItemFromAsset(asset) {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
-      resolve(createItem(file.name, url, image));
+      const mediaType = isGifAsset(asset) ? "gif" : "image";
+      const item = createItem(asset.name, asset.url, image, mediaType);
+      item.status = mediaType === "gif" ? "GIF" : "图片";
+      item.assetKey = asset.key;
+      item.assetUrl = asset.url;
+      item.assetType = asset.type;
+      resolve(item);
     };
     image.onerror = reject;
-    image.src = url;
+    image.src = asset.url;
   });
 }
 
-function createItem(name, src, image) {
-  const maxSide = Math.max(image.naturalWidth, image.naturalHeight, 1);
+function createPendingVideoItem(asset) {
+  const item = createPlaceholderItem(asset.name, "视频加载中", "video");
+  item.src = asset.url;
+  item.objectUrl = asset.url;
+  item.assetKey = asset.key;
+  item.assetUrl = asset.url;
+  item.assetType = asset.type;
+  return item;
+}
+
+function hydrateVideoItem(asset, item) {
+  const video = document.createElement("video");
+  video.muted = true;
+  video.loop = true;
+  video.playsInline = true;
+  video.autoplay = true;
+  video.preload = "auto";
+
+  const updateLayer = () => {
+    syncControls();
+    renderLayerList();
+  };
+  const fail = (status) => {
+    clearTimeout(timer);
+    item.media = makePlaceholderMedia(asset.name, status);
+    item.mediaType = "placeholder";
+    item.status = status;
+    item.thumbnail = item.media.toDataURL("image/png");
+    updateLayer();
+  };
+  const onMetadata = () => {
+    if (!video.videoWidth || !video.videoHeight) return;
+    item.pendingMedia = video;
+    item.status = "MOV 准备中";
+    item.thumbnail = makePlaceholderMedia(asset.name, "等待视频帧").toDataURL("image/png");
+    video.play().catch(() => {});
+    updateLayer();
+  };
+  const onFrame = () => {
+    if (!video.videoWidth || !video.videoHeight) return;
+    clearTimeout(timer);
+    item.media = video;
+    item.mediaType = "video";
+    item.status = asset.name.toLowerCase().endsWith(".webm") ? "WebM" : "MOV";
+    item.thumbnail = makeVideoThumbnail(video);
+    video.play().catch(() => {});
+    updateLayer();
+  };
+  const onError = () => fail("视频无法解码");
+  const timer = setTimeout(() => {
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) fail("视频无可绘制帧");
+  }, 7000);
+
+  video.addEventListener("loadedmetadata", onMetadata);
+  video.addEventListener("loadeddata", onFrame);
+  video.addEventListener("canplay", onFrame);
+  video.addEventListener("error", onError);
+  video.src = item.objectUrl;
+  video.load();
+
+  video.addEventListener("playing", onFrame);
+}
+
+function placeNewItem(item, index) {
+  const angle = index * 1.17;
+  Object.assign(item, {
+    x: Math.cos(angle) * 190,
+    y: Math.sin(angle * 0.8) * 105,
+    z: -120 + (index % 6) * 180,
+    scale: 0.82 + (index % 3) * 0.12,
+    rotation: degreesToRadians((index % 5 - 2) * 5),
+    tilt: degreesToRadians((index % 4 - 1.5) * 11),
+  });
+}
+
+function createItem(name, src, media, mediaType) {
+  const maxSide = Math.max(getMediaWidth(media), getMediaHeight(media), 1);
   const base = clamp(260 / maxSide, 0.28, 1.1);
   return {
     id: makeId(),
     name,
     src,
-    image,
+    media,
+    mediaType,
+    thumbnail: src,
+    status: mediaType === "video" ? "MOV" : "图片",
+    assetKey: "",
+    assetUrl: src,
+    assetType: "",
     x: 0,
     y: 0,
     z: 0,
@@ -226,6 +453,370 @@ function createItem(name, src, image) {
     tilt: 0,
     alpha: 1,
   };
+}
+
+function createPlaceholderItem(name, status, mediaType) {
+  const media = makePlaceholderMedia(name, status);
+  const item = createItem(name, media.toDataURL("image/png"), media, "placeholder");
+  item.status = status;
+  item.originalMediaType = mediaType;
+  item.thumbnail = item.src;
+  return item;
+}
+
+function isSupportedMediaFile(file) {
+  return /image\/(png|gif)/.test(file.type) || isMovFile(file) || isWebmFile(file);
+}
+
+function isMovFile(file) {
+  return file.type === "video/quicktime" || /\.mov$/i.test(file.name);
+}
+
+function isWebmFile(file) {
+  return file.type === "video/webm" || /\.webm$/i.test(file.name);
+}
+
+function isVideoAsset(asset) {
+  return /^video\//.test(asset.type) || /\.(mov|mp4|webm)$/i.test(asset.url);
+}
+
+function isGifAsset(asset) {
+  return asset.type === "image/gif" || /\.gif$/i.test(asset.url);
+}
+
+async function uploadAsset(file) {
+  const response = await fetch(`/api/assets?filename=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!response.ok) throw new Error("asset upload failed");
+  return response.json();
+}
+
+function localAssetFromFile(file) {
+  return {
+    key: `local/${file.name}-${Date.now()}`,
+    name: file.name,
+    url: URL.createObjectURL(file),
+    type: file.type || (isMovFile(file) ? "video/quicktime" : "application/octet-stream"),
+    size: file.size,
+  };
+}
+
+function getMediaWidth(media) {
+  return media.videoWidth || media.naturalWidth || media.width || 1;
+}
+
+function getMediaHeight(media) {
+  return media.videoHeight || media.naturalHeight || media.height || 1;
+}
+
+function makePlaceholderMedia(name, status) {
+  const buffer = document.createElement("canvas");
+  buffer.width = 420;
+  buffer.height = 260;
+  const b = buffer.getContext("2d");
+  const gradient = b.createLinearGradient(0, 0, buffer.width, buffer.height);
+  gradient.addColorStop(0, "#16211f");
+  gradient.addColorStop(1, "#28251b");
+  b.fillStyle = gradient;
+  b.fillRect(0, 0, buffer.width, buffer.height);
+
+  b.strokeStyle = "rgba(139,215,197,0.45)";
+  b.lineWidth = 3;
+  b.strokeRect(14, 14, buffer.width - 28, buffer.height - 28);
+
+  b.fillStyle = "#f3f1e8";
+  b.font = "700 34px Inter, sans-serif";
+  b.fillText(status, 34, 100);
+  b.fillStyle = "rgba(243,241,232,0.72)";
+  b.font = "600 22px Inter, sans-serif";
+  b.fillText(shortenName(name), 34, 148);
+  return buffer;
+}
+
+function shortenName(name) {
+  return name.length > 24 ? `${name.slice(0, 21)}...` : name;
+}
+
+function makeVideoThumbnail(video) {
+  if (!video.videoWidth || !video.videoHeight) return "";
+  const buffer = document.createElement("canvas");
+  const side = 96;
+  buffer.width = side;
+  buffer.height = side;
+  const b = buffer.getContext("2d");
+  const scale = Math.max(side / video.videoWidth, side / video.videoHeight);
+  const width = video.videoWidth * scale;
+  const height = video.videoHeight * scale;
+  b.fillStyle = "#0b0e0d";
+  b.fillRect(0, 0, side, side);
+  b.drawImage(video, (side - width) / 2, (side - height) / 2, width, height);
+  b.fillStyle = "rgba(0,0,0,0.52)";
+  b.fillRect(0, side - 26, side, 26);
+  b.fillStyle = "#ffffff";
+  b.font = "700 14px Inter, sans-serif";
+  b.fillText("MOV", 10, side - 9);
+  return buffer.toDataURL("image/png");
+}
+
+async function loadInitialScene() {
+  state.loadingScene = true;
+  setLayoutStatus("正在读取布局");
+  try {
+    await loadSceneList();
+    syncSceneControls();
+    const loaded = await loadSceneById(state.currentSceneId);
+    if (loaded) return;
+  } catch {
+    setLayoutStatus("未连接布局数据库", "warn");
+  } finally {
+    state.loadingScene = false;
+  }
+
+  if (!isViewer) {
+    seedDemoImages();
+    syncSceneControls();
+    syncControls();
+  } else {
+    setLayoutStatus("演示页暂无保存布局", "warn");
+  }
+}
+
+async function loadSceneById(sceneId) {
+  state.loadingScene = true;
+  const response = await fetch(`/api/layout?id=${encodeURIComponent(sceneId)}`);
+  if (!response.ok) {
+    state.loadingScene = false;
+    return false;
+  }
+
+  const layout = await response.json();
+  const hasItems = Array.isArray(layout.items) && layout.items.length > 0;
+  state.currentSceneId = layout.id || sceneId;
+  state.currentSceneName = layout.name || state.currentSceneId;
+  state.focal = Number(layout.scene?.focal ?? state.focal);
+  state.parallax = Number(layout.scene?.parallax ?? state.parallax);
+  state.showGrid = layout.scene?.showGrid !== false;
+  ui.focalRange.value = String(valueToRange("focalRange", state.focal));
+  ui.parallaxRange.value = String(valueToRange("parallaxRange", state.parallax));
+  ui.gridToggle.checked = state.showGrid;
+
+  clearSceneMedia();
+  if (hasItems) {
+    await restoreLayoutItems(layout.items);
+  } else {
+    state.items = [];
+    state.selectedId = null;
+    syncControls();
+    renderLayerList();
+  }
+
+  syncSceneControls();
+  updateRangeDisplays();
+  setLayoutStatus(hasItems ? `已切换：${state.currentSceneName}` : `空场景：${state.currentSceneName}`, hasItems ? "good" : "warn");
+  state.loadingScene = false;
+  return hasItems;
+}
+
+async function loadSceneList() {
+  if (!ui.sceneSelect) return;
+  const response = await fetch("/api/layout?list=1");
+  if (!response.ok) return;
+  const payload = await response.json();
+  state.scenes = Array.isArray(payload.scenes) ? payload.scenes : [];
+  if (!state.scenes.some((scene) => scene.id === state.currentSceneId)) {
+    state.scenes.push({
+      id: state.currentSceneId,
+      name: state.currentSceneId === "default" ? "默认场景" : state.currentSceneId,
+      updatedAt: "",
+    });
+  }
+  renderSceneOptions();
+}
+
+function renderSceneOptions() {
+  if (!ui.sceneSelect) return;
+  ui.sceneSelect.innerHTML = "";
+  state.scenes.forEach((scene) => {
+    const option = document.createElement("option");
+    option.value = scene.id;
+    option.textContent = scene.name;
+    ui.sceneSelect.append(option);
+  });
+  ui.sceneSelect.value = state.currentSceneId;
+}
+
+function syncSceneControls() {
+  renderSceneOptions();
+  if (ui.sceneNameInput) ui.sceneNameInput.value = state.currentSceneName;
+  const demo = document.querySelector(".demo-link");
+  if (demo) demo.href = `./viewer.html?scene=${encodeURIComponent(state.currentSceneId)}`;
+}
+
+async function switchScene(sceneId) {
+  if (!sceneId || sceneId === state.currentSceneId) return;
+  setLayoutStatus("正在切换场景");
+  const loaded = await loadSceneById(sceneId);
+  if (loaded || isViewer) updateSceneUrl();
+}
+
+function updateSceneUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("scene", state.currentSceneId);
+  window.history.replaceState({}, "", url);
+}
+
+async function restoreLayoutItems(items) {
+  clearSceneMedia();
+  for (const record of items) {
+    const asset = {
+      key: record.assetKey,
+      name: record.name,
+      url: record.assetUrl || record.src,
+      type: record.assetType || inferAssetType(record.assetUrl || record.src),
+      size: 0,
+    };
+    if (!asset.url) continue;
+
+    let item;
+    if (isVideoAsset(asset)) {
+      item = createPendingVideoItem(asset);
+      hydrateVideoItem(asset, item);
+    } else {
+      item = await loadImageItemFromAsset(asset).catch(() =>
+        createPlaceholderItem(asset.name, "素材无法加载", "image"),
+      );
+    }
+
+    applyLayoutRecord(item, record);
+    state.items.push(item);
+  }
+  state.selectedId = isViewer ? null : state.items[0]?.id ?? null;
+  syncControls();
+  renderLayerList();
+}
+
+function clearSceneMedia() {
+  state.items.forEach((item) => {
+    if (item.mediaType === "video") {
+      item.media.pause?.();
+      item.media.removeAttribute?.("src");
+      item.media.load?.();
+    }
+  });
+  state.gifElements.forEach((element) => element.remove());
+  state.gifElements.clear();
+  state.items = [];
+  state.selectedId = null;
+}
+
+function applyLayoutRecord(item, record) {
+  item.id = record.id || item.id;
+  item.x = Number(record.x || 0);
+  item.y = Number(record.y || 0);
+  item.z = Number(record.z || 0);
+  item.scale = Number(record.scale || item.scale || 1);
+  item.rotation = Number(record.rotation || 0);
+  item.tilt = Number(record.tilt || 0);
+  item.alpha = Number(record.alpha || 1);
+  item.assetKey = record.assetKey || item.assetKey;
+  item.assetUrl = record.assetUrl || item.assetUrl || item.src;
+  item.assetType = record.assetType || item.assetType;
+}
+
+function serializeLayout() {
+  return {
+    id: state.currentSceneId,
+    name: ui.sceneNameInput?.value?.trim() || state.currentSceneName,
+    scene: {
+      focal: state.focal,
+      parallax: state.parallax,
+      showGrid: state.showGrid,
+    },
+    items: state.items
+      .filter((item) => item.assetUrl || item.src)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        assetKey: item.assetKey,
+        assetUrl: item.assetUrl || item.src,
+        assetType: item.assetType || inferAssetType(item.assetUrl || item.src),
+        x: item.x,
+        y: item.y,
+        z: item.z,
+        scale: item.scale,
+        rotation: item.rotation,
+        tilt: item.tilt,
+        alpha: item.alpha,
+      })),
+  };
+}
+
+function scheduleSaveLayout() {
+  if (state.loadingScene || isViewer) return;
+  clearTimeout(state.layoutSaveTimer);
+  setLayoutStatus("有更改，准备自动保存", "warn");
+  state.layoutSaveTimer = setTimeout(() => saveLayoutNow(), 650);
+}
+
+async function saveLayoutNow() {
+  if (isViewer) return;
+  try {
+    const sceneName = ui.sceneNameInput?.value?.trim() || state.currentSceneName;
+    const response = await fetch("/api/layout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...serializeLayout(), id: state.currentSceneId, name: sceneName }),
+    });
+    if (!response.ok) throw new Error("save failed");
+    const result = await response.json();
+    state.currentSceneId = result.id || state.currentSceneId;
+    state.currentSceneName = result.name || sceneName;
+    await loadSceneList();
+    syncSceneControls();
+    setLayoutStatus(`已保存：${state.currentSceneName}`, "good");
+  } catch {
+    setLayoutStatus("布局保存失败，请确认使用 node server.js 启动", "warn");
+  }
+}
+
+async function saveAsLayout() {
+  if (isViewer) return;
+  const name = window.prompt("请输入新场景名称", `${ui.sceneNameInput?.value || "新场景"} 副本`);
+  if (!name) return;
+  state.currentSceneId = makeSceneId(name);
+  state.currentSceneName = name.trim();
+  if (ui.sceneNameInput) ui.sceneNameInput.value = state.currentSceneName;
+  await saveLayoutNow();
+}
+
+function makeSceneId(name) {
+  const base =
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^\w\u4e00-\u9fa5.-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "scene";
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+function setLayoutStatus(message, tone = "") {
+  if (!ui.layoutStatus) return;
+  ui.layoutStatus.textContent = message;
+  ui.layoutStatus.classList.toggle("good", tone === "good");
+  ui.layoutStatus.classList.toggle("warn", tone === "warn");
+}
+
+function inferAssetType(url = "") {
+  if (/\.gif$/i.test(url)) return "image/gif";
+  if (/\.png$/i.test(url)) return "image/png";
+  if (/\.mov$/i.test(url)) return "video/quicktime";
+  if (/\.webm$/i.test(url)) return "video/webm";
+  if (/\.mp4$/i.test(url)) return "video/mp4";
+  return "application/octet-stream";
 }
 
 function seedDemoImages() {
@@ -239,7 +830,7 @@ function seedDemoImages() {
   demos.forEach((demo, index) => {
     const image = new Image();
     image.onload = () => {
-      const item = createItem(demo.name, image.src, image);
+      const item = createItem(demo.name, image.src, image, "image");
       item.x = [-230, 70, 250, -20][index];
       item.y = [105, -72, 82, -8][index];
       item.z = [-180, 100, 480, 260][index];
@@ -300,6 +891,7 @@ function draw() {
   drawBackdrop();
   if (state.showGrid) drawPerspectiveGrid();
   drawItems();
+  updateGifOverlays();
   drawReticle();
   requestAnimationFrame(draw);
 }
@@ -373,9 +965,19 @@ function drawItems() {
 }
 
 function drawItem(item) {
+  if (item.mediaType === "gif") {
+    const projection = project(item);
+    const w = getMediaWidth(item.media) * item.scale * projection.scale;
+    const h = getMediaHeight(item.media) * item.scale * projection.scale;
+    if (item.id === state.selectedId && !isViewer) drawSelection(projection, w, h, item.rotation);
+    return;
+  }
+  if (item.mediaType === "video" && item.media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    return;
+  }
   const projection = project(item);
-  const w = item.image.naturalWidth * item.scale * projection.scale;
-  const h = item.image.naturalHeight * item.scale * projection.scale;
+  const w = getMediaWidth(item.media) * item.scale * projection.scale;
+  const h = getMediaHeight(item.media) * item.scale * projection.scale;
   const selected = item.id === state.selectedId;
   const yaw = item.tilt + state.currentHead.x * 0.18 - item.x * 0.00018;
   const squash = clamp(Math.cos(yaw), 0.45, 1);
@@ -386,29 +988,18 @@ function drawItem(item) {
   ctx.rotate(item.rotation + state.currentHead.x * 0.035);
   ctx.transform(squash, 0, skew, 1, 0, 0);
 
-  ctx.shadowColor = "rgba(0,0,0,0.42)";
-  ctx.shadowBlur = clamp(35 * projection.scale, 10, 44);
-  ctx.shadowOffsetY = clamp(22 * projection.scale, 7, 30);
-  roundRectPath(-w / 2 - 7, -h / 2 - 7, w + 14, h + 14, 8);
-  ctx.fillStyle = "rgba(255,255,255,0.08)";
-  ctx.fill();
-  ctx.shadowColor = "transparent";
-
   ctx.globalAlpha = item.alpha;
   roundRectPath(-w / 2, -h / 2, w, h, 7);
   ctx.clip();
-  ctx.drawImage(item.image, -w / 2, -h / 2, w, h);
+  ctx.shadowColor = "rgba(0,0,0,0.38)";
+  ctx.shadowBlur = clamp(24 * projection.scale, 8, 34);
+  ctx.shadowOffsetY = clamp(14 * projection.scale, 4, 22);
+  ctx.drawImage(item.media, -w / 2, -h / 2, w, h);
+  ctx.shadowColor = "transparent";
   ctx.globalAlpha = 1;
-
-  const shine = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
-  shine.addColorStop(0, "rgba(255,255,255,0.20)");
-  shine.addColorStop(0.36, "rgba(255,255,255,0.03)");
-  shine.addColorStop(1, "rgba(0,0,0,0.18)");
-  ctx.fillStyle = shine;
-  ctx.fillRect(-w / 2, -h / 2, w, h);
   ctx.restore();
 
-  if (selected) drawSelection(projection, w, h, item.rotation);
+  if (selected && !isViewer) drawSelection(projection, w, h, item.rotation);
 }
 
 function drawSelection(projection, w, h, rotation) {
@@ -421,6 +1012,46 @@ function drawSelection(projection, w, h, rotation) {
   roundRectPath(-w / 2 - 9, -h / 2 - 9, w + 18, h + 18, 8);
   ctx.stroke();
   ctx.restore();
+}
+
+function updateGifOverlays() {
+  if (!ui.mediaOverlay) return;
+  const visibleGifIds = new Set();
+  const sorted = [...state.items].sort((a, b) => b.z - a.z);
+
+  sorted.forEach((item, index) => {
+    if (item.mediaType !== "gif") return;
+    visibleGifIds.add(item.id);
+    let element = state.gifElements.get(item.id);
+    if (!element) {
+      element = document.createElement("img");
+      element.className = "gif-layer";
+      element.alt = "";
+      element.src = item.assetUrl || item.src;
+      ui.mediaOverlay.append(element);
+      state.gifElements.set(item.id, element);
+    }
+
+    const projection = project(item);
+    const width = getMediaWidth(item.media) * item.scale * projection.scale;
+    const height = getMediaHeight(item.media) * item.scale * projection.scale;
+    const yaw = item.tilt + state.currentHead.x * 0.18 - item.x * 0.00018;
+    const squash = clamp(Math.cos(yaw), 0.45, 1);
+    const skew = Math.sin(yaw) * 0.16;
+    element.style.width = `${width}px`;
+    element.style.height = `${height}px`;
+    element.style.transform = `translate(${projection.x - width / 2}px, ${projection.y - height / 2}px) rotate(${item.rotation + state.currentHead.x * 0.035}rad) matrix(${squash}, 0, ${skew}, 1, 0, 0)`;
+    element.style.zIndex = String(1000 + index);
+    element.style.opacity = String(item.alpha);
+    element.style.outline =
+      item.id === state.selectedId && !isViewer ? "2px dashed rgba(139,215,197,0.9)" : "0";
+  });
+
+  for (const [id, element] of state.gifElements) {
+    if (visibleGifIds.has(id)) continue;
+    element.remove();
+    state.gifElements.delete(id);
+  }
 }
 
 function drawReticle() {
@@ -468,8 +1099,8 @@ function hitTest(event) {
   const nearFirst = [...state.items].sort((a, b) => a.z - b.z);
   for (const item of nearFirst) {
     const projection = project(item);
-    const w = item.image.naturalWidth * item.scale * projection.scale;
-    const h = item.image.naturalHeight * item.scale * projection.scale;
+    const w = getMediaWidth(item.media) * item.scale * projection.scale;
+    const h = getMediaHeight(item.media) * item.scale * projection.scale;
     const dx = point.x - projection.x;
     const dy = point.y - projection.y;
     const angle = -item.rotation;
@@ -488,8 +1119,11 @@ function renderLayerList() {
     button.type = "button";
     button.className = `layer-item${item.id === state.selectedId ? " selected" : ""}`;
     button.innerHTML = `
-      <span class="layer-thumb" style="background-image:url('${item.src}')"></span>
-      <span class="layer-name">${escapeHTML(item.name)}</span>
+      <span class="layer-thumb" style="background-image:url('${item.thumbnail}')"></span>
+      <span class="layer-copy">
+        <span class="layer-name">${escapeHTML(item.name)}</span>
+        <span class="layer-status">${escapeHTML(item.status || item.mediaType)}</span>
+      </span>
       <span class="layer-depth">${Math.round(item.z)}</span>
     `;
     button.addEventListener("click", () => {
@@ -504,15 +1138,40 @@ function renderLayerList() {
 function syncControls() {
   const selected = getSelected();
   const disabled = !selected;
-  for (const [id] of controls) ui[id].disabled = disabled;
+  for (const id of controls) ui[id].disabled = disabled;
   ui.deleteButton.disabled = disabled;
-  if (!selected) return;
-  ui.xRange.value = Math.round(selected.x);
-  ui.yRange.value = Math.round(selected.y);
-  ui.zRange.value = Math.round(selected.z);
-  ui.scaleRange.value = Math.round(selected.scale * 100);
-  ui.rotationRange.value = Math.round(radiansToDegrees(selected.rotation));
-  ui.tiltRange.value = Math.round(radiansToDegrees(selected.tilt));
+  ui.focalRange.value = String(valueToRange("focalRange", state.focal));
+  ui.parallaxRange.value = String(valueToRange("parallaxRange", state.parallax));
+  if (!selected) {
+    for (const id of controls) {
+      ui[id].value = String(rangeConfigs[id].neutral ?? 50);
+    }
+    updateRangeDisplays();
+    return;
+  }
+  for (const id of controls) {
+    ui[id].value = String(valueToRange(id, selected[rangeConfigs[id].itemKey]));
+  }
+  updateRangeDisplays();
+}
+
+function rangeToValue(id, rangeValue) {
+  const config = rangeConfigs[id];
+  const percent = clamp(Number(rangeValue), 0, 100) / 100;
+  return config.min + (config.max - config.min) * percent;
+}
+
+function valueToRange(id, value) {
+  const config = rangeConfigs[id];
+  const percent = ((Number(value) - config.min) / (config.max - config.min)) * 100;
+  return Math.round(clamp(percent, 0, 100));
+}
+
+function updateRangeDisplays() {
+  for (const id of Object.keys(ui.values)) {
+    if (!ui.values[id] || !ui[id]) continue;
+    ui.values[id].textContent = String(Math.round(Number(ui[id].value)));
+  }
 }
 
 function autoLayout() {
@@ -527,15 +1186,19 @@ function autoLayout() {
     item.rotation = degreesToRadians(Math.sin(angle) * 12);
     item.tilt = degreesToRadians(Math.cos(angle * 0.7) * 24);
   });
+  scheduleSaveLayout();
 }
 
 function deleteSelected() {
   const selected = getSelected();
   if (!selected) return;
   state.items = state.items.filter((item) => item.id !== selected.id);
+  state.gifElements.get(selected.id)?.remove();
+  state.gifElements.delete(selected.id);
   state.selectedId = state.items[0]?.id ?? null;
   syncControls();
   renderLayerList();
+  scheduleSaveLayout();
 }
 
 function exportFrame() {
@@ -932,6 +1595,461 @@ async function trackCameraFrame() {
     ui.trackingMeta.textContent = error.message || "检测器暂时不可用";
   }
   requestAnimationFrame(trackCameraFrame);
+}
+
+function activateTab(targetId) {
+  if (!targetId) return;
+  ui.tabButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.tabTarget === targetId);
+  });
+  ui.tabPages.forEach((page) => {
+    page.classList.toggle("active", page.id === targetId);
+  });
+  resize();
+}
+
+function sendManualVoiceText() {
+  const text = ui.voiceTextInput?.value.trim() ?? "";
+  if (!text || state.voice.busy) return;
+  ui.voiceTranscript.textContent = text;
+  handleAudienceSpeech(text);
+}
+
+async function toggleMicLevelMonitor() {
+  if (state.voice.micMonitoring) {
+    stopMicLevelMonitor();
+    return;
+  }
+  await startMicLevelMonitor();
+}
+
+async function startMicLevelMonitor() {
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicLevelStatus("当前浏览器不支持麦克风检测");
+      return;
+    }
+
+    if (state.voice.micMonitoring) return;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioContext = new AudioContext();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.55;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+
+    state.voice.micStream = stream;
+    state.voice.micAudioContext = audioContext;
+    state.voice.micAnalyser = analyser;
+    state.voice.micMonitoring = true;
+    ui.micLevelButton.textContent = "停止检测";
+    setMicLevelStatus("麦克风已连接，请说话测试电平");
+    updateMicLevel();
+  } catch (error) {
+    setMicLevelStatus(describeMicError(error));
+  }
+}
+
+function stopMicLevelMonitor() {
+  cancelAnimationFrame(state.voice.micLevelTimer);
+  state.voice.micLevelTimer = null;
+  state.voice.micStream?.getTracks().forEach((track) => track.stop());
+  state.voice.micAudioContext?.close?.();
+  state.voice.micStream = null;
+  state.voice.micAudioContext = null;
+  state.voice.micAnalyser = null;
+  state.voice.micMonitoring = false;
+  if (ui.micLevelButton) ui.micLevelButton.textContent = "检测麦克风";
+  if (ui.micLevelBar) ui.micLevelBar.style.width = "0%";
+  setMicLevelStatus("麦克风电平未检测");
+}
+
+function updateMicLevel() {
+  const analyser = state.voice.micAnalyser;
+  if (!analyser || !state.voice.micMonitoring) return;
+
+  const samples = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(samples);
+  let sum = 0;
+  let peak = 0;
+  for (const value of samples) {
+    const centered = (value - 128) / 128;
+    sum += centered * centered;
+    peak = Math.max(peak, Math.abs(centered));
+  }
+  const rms = Math.sqrt(sum / samples.length);
+  const level = Math.min(100, Math.max(rms * 420, peak * 120));
+  if (ui.micLevelBar) ui.micLevelBar.style.width = `${level.toFixed(0)}%`;
+  setMicLevelStatus(level > 4 ? `检测到声音：${level.toFixed(0)}%` : "麦克风已连接，但当前几乎没有声音");
+  state.voice.micLevelTimer = requestAnimationFrame(updateMicLevel);
+}
+
+function setMicLevelStatus(message) {
+  if (ui.micLevelStatus) ui.micLevelStatus.textContent = message;
+}
+
+function describeMicError(error) {
+  if (error.name === "NotAllowedError") return "麦克风权限被拒绝，请检查浏览器或系统权限";
+  if (error.name === "NotFoundError") return "没有检测到可用麦克风";
+  if (error.name === "NotReadableError") return "麦克风可能正被其他应用占用";
+  return error.message || "麦克风检测失败";
+}
+
+function toggleVoiceListening() {
+  if (state.voice.busy) return;
+  const recognition = getSpeechRecognition();
+  if (!recognition) {
+    setVoiceStatus("当前浏览器不支持语音识别，请使用 Chrome 或 Edge。", "error");
+    return;
+  }
+
+  if (state.voice.listening) {
+    state.voice.manualStop = true;
+    clearTimeout(state.voice.listenStopTimer);
+    state.voice.listenStopTimer = null;
+    recognition.stop();
+    return;
+  }
+
+  try {
+    state.voice.listening = true;
+    state.voice.manualStop = false;
+    state.voice.restartingRecognition = false;
+    state.voice.transcriptBuffer = "";
+    state.voice.interimTranscript = "";
+    state.voice.listenStartedAt = Date.now();
+    ui.voiceButton.classList.add("active");
+    ui.voiceButton.textContent = "停止聆听";
+    ui.voiceTranscript.textContent = "正在听，请说话。至少会听 10 秒。";
+    setVoiceStatus("正在聆听观众说话", "listening");
+    startMicLevelMonitor();
+    clearTimeout(state.voice.listenStopTimer);
+    state.voice.listenStopTimer = setTimeout(() => {
+      if (!state.voice.listening || state.voice.manualStop) return;
+      recognition.stop();
+    }, state.voice.minListenMs);
+    recognition.start();
+  } catch (error) {
+    state.voice.listening = false;
+    ui.voiceButton.classList.remove("active");
+    ui.voiceButton.textContent = "开始对话";
+    setVoiceStatus(error.message || "语音识别启动失败", "error");
+  }
+}
+
+function getSpeechRecognition() {
+  if (state.voice.recognition) return state.voice.recognition;
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = "zh-CN";
+  recognition.interimResults = true;
+  recognition.continuous = true;
+
+  recognition.addEventListener("result", (event) => {
+    let interim = "";
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const transcript = event.results[index][0]?.transcript ?? "";
+      if (event.results[index].isFinal) {
+        state.voice.transcriptBuffer = `${state.voice.transcriptBuffer} ${transcript}`.trim();
+      } else {
+        interim = `${interim} ${transcript}`.trim();
+      }
+    }
+    state.voice.interimTranscript = interim;
+    const displayText = [state.voice.transcriptBuffer, state.voice.interimTranscript]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    if (displayText) ui.voiceTranscript.textContent = displayText;
+  });
+
+  recognition.addEventListener("audiostart", () => {
+    setVoiceStatus("浏览器已开始接收麦克风音频", "listening");
+  });
+
+  recognition.addEventListener("soundstart", () => {
+    setVoiceStatus("检测到声音，正在识别文字", "listening");
+  });
+
+  recognition.addEventListener("speechstart", () => {
+    setVoiceStatus("检测到语音，正在转文字", "listening");
+  });
+
+  recognition.addEventListener("nomatch", () => {
+    setVoiceStatus("听到了声音，但没有识别出文字。请靠近麦克风再试。", "error");
+  });
+
+  recognition.addEventListener("end", () => {
+    const elapsed = Date.now() - state.voice.listenStartedAt;
+    if (state.voice.listening && !state.voice.manualStop && elapsed < state.voice.minListenMs) {
+      state.voice.restartingRecognition = true;
+      setVoiceStatus("识别暂停，继续聆听到 10 秒", "listening");
+      setTimeout(() => {
+        try {
+          if (state.voice.listening && !state.voice.manualStop) recognition.start();
+        } catch {}
+      }, 180);
+      return;
+    }
+    finalizeVoiceListening();
+  });
+
+  recognition.addEventListener("error", (event) => {
+    if (state.voice.listening && event.error === "no-speech") return;
+    state.voice.manualStop = true;
+    clearTimeout(state.voice.listenStopTimer);
+    state.voice.listenStopTimer = null;
+    state.voice.listening = false;
+    ui.voiceButton.classList.remove("active");
+    ui.voiceButton.textContent = "开始对话";
+    setVoiceStatus(describeSpeechError(event.error), "error");
+  });
+
+  state.voice.recognition = recognition;
+  return recognition;
+}
+
+function finalizeVoiceListening() {
+  clearTimeout(state.voice.listenStopTimer);
+  state.voice.listenStopTimer = null;
+  state.voice.listening = false;
+  state.voice.manualStop = false;
+  state.voice.restartingRecognition = false;
+  ui.voiceButton.classList.remove("active");
+  ui.voiceButton.textContent = "开始对话";
+
+  const finalText = [state.voice.transcriptBuffer, state.voice.interimTranscript]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  state.voice.transcriptBuffer = "";
+  state.voice.interimTranscript = "";
+
+  if (finalText) {
+    ui.voiceTranscript.textContent = finalText;
+    handleAudienceSpeech(finalText);
+    return;
+  }
+
+  if (!state.voice.busy) {
+    ui.voiceTranscript.textContent = "没有识别到文字。电平条有动作的话，请再靠近麦克风说一遍。";
+    setVoiceStatus("没有识别到文字", "error");
+  }
+}
+
+async function handleAudienceSpeech(text) {
+  if (state.voice.busy) return;
+  state.voice.busy = true;
+  state.voice.listening = false;
+  ui.voiceButton.classList.remove("active");
+  ui.voiceButton.textContent = "生成中";
+  setVoiceStatus("正在根据剧本走向生成回应", "thinking");
+
+  try {
+    const cue = await getDirectorCue(text);
+    applyDirectorCue(cue);
+    const reply = cue.reply || "我听见了。画面会跟着你的选择继续向前。";
+    ui.voiceReply.textContent = reply;
+    updateCaption(reply);
+    speakReply(reply);
+    state.voice.conversation.push({ role: "user", content: text }, { role: "assistant", content: reply });
+    state.voice.conversation = state.voice.conversation.slice(-10);
+    setVoiceStatus(`已回应：${getCurrentBeat().title}`);
+  } catch (error) {
+    const fallback = makeLocalDirectorCue(text);
+    applyDirectorCue(fallback);
+    ui.voiceReply.textContent = fallback.reply;
+    updateCaption(fallback.reply);
+    speakReply(fallback.reply);
+    setVoiceStatus(error.message || "Kimi 暂不可用，已使用本地剧本回应", "error");
+  } finally {
+    state.voice.busy = false;
+    ui.voiceButton.textContent = "开始对话";
+    if (ui.voiceTextInput) ui.voiceTextInput.value = "";
+  }
+}
+
+async function getDirectorCue(text) {
+  const response = await fetch(state.voice.directorEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text,
+      beatKey: ui.scriptBeatSelect.value,
+      conversation: state.voice.conversation.slice(-6),
+    }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const message = payload.message || payload.error || response.statusText;
+    throw new Error(`Kimi 请求失败：${response.status} ${message}`);
+  }
+
+  const payload = await response.json();
+  renderKimiDebug(payload.debug);
+  if (payload.cue) return payload.cue;
+  const content = payload.choices?.[0]?.message?.content ?? "";
+  return parseDirectorCue(content) ?? makeLocalDirectorCue(text);
+}
+
+function renderKimiDebug(debug) {
+  if (!debug) {
+    if (ui.kimiResponseDebug) ui.kimiResponseDebug.textContent = "后端没有返回 debug 字段。";
+    return;
+  }
+  if (ui.kimiRequestDebug) {
+    ui.kimiRequestDebug.textContent = JSON.stringify(debug.request ?? {}, null, 2);
+  }
+  if (ui.kimiResponseDebug) {
+    ui.kimiResponseDebug.textContent = JSON.stringify(
+      {
+        rawContent: debug.rawContent,
+        extractedReply: debug.extractedReply,
+        response: debug.response,
+      },
+      null,
+      2,
+    );
+  }
+}
+
+function parseDirectorCue(content) {
+  const jsonText = content.match(/\{[\s\S]*\}/)?.[0] ?? content;
+  try {
+    const cue = JSON.parse(jsonText);
+    if (!cue || typeof cue !== "object") return null;
+    return cue;
+  } catch {
+    return null;
+  }
+}
+
+function makeLocalDirectorCue(text) {
+  const beat = getCurrentBeat();
+  const wantsNear = /近|靠近|前|清楚|放大|看/.test(text);
+  const wantsHidden = /暗|隐藏|秘密|线索|背后/.test(text);
+  const wantsFar = /远|后|全景|整体/.test(text);
+  return {
+    reply: wantsHidden
+      ? "我会把线索压暗一点，让真正重要的东西从深处浮出来。"
+      : wantsNear
+        ? "好，画面会向你靠近。请继续说出你想追问的那一层。"
+        : wantsFar
+          ? "我会把空间拉开，让你先看到这段故事的全貌。"
+          : "我听见了。这个选择会改变接下来的空间重心。",
+    nextBeat: beat.next,
+    stage: {
+      focus: wantsNear ? "near" : wantsFar ? "far" : "selected",
+      mood: wantsHidden ? "hidden" : "calm",
+      layout: /重新|展开|布局|散开/.test(text),
+      grid: !wantsHidden,
+    },
+  };
+}
+
+function applyDirectorCue(cue) {
+  const stage = cue.stage ?? {};
+  const focus = stage.focus ?? "selected";
+
+  if (stage.layout) autoLayout();
+  state.showGrid = typeof stage.grid === "boolean" ? stage.grid : state.showGrid;
+  ui.gridToggle.checked = state.showGrid;
+
+  if (focus === "near") {
+    state.focal = 720;
+    state.parallax = 130;
+    selectItemByDepth("near");
+  } else if (focus === "far") {
+    state.focal = 1120;
+    state.parallax = 62;
+    selectItemByDepth("far");
+  } else if (focus === "middle") {
+    state.focal = 900;
+    state.parallax = 92;
+    selectItemByDepth("middle");
+  } else if (!getSelected()) {
+    state.selectedId = state.items[0]?.id ?? null;
+  }
+
+  const selected = getSelected();
+  if (selected) {
+    selected.scale = clamp(selected.scale * 1.08, 0.34, 1.35);
+    selected.alpha = stage.mood === "hidden" ? 0.78 : 1;
+    selected.z = clamp(selected.z - 35, -260, 980);
+  }
+
+  if (stage.mood === "tense") {
+    state.parallax = clamp(state.parallax + 24, 0, 180);
+  } else if (stage.mood === "bright") {
+    state.focal = clamp(state.focal - 80, 520, 1300);
+  } else if (stage.mood === "hidden") {
+    state.parallax = clamp(state.parallax - 18, 0, 180);
+  }
+
+  if (cue.nextBeat && scriptBeats[cue.nextBeat]) {
+    ui.scriptBeatSelect.value = cue.nextBeat;
+  }
+
+  ui.focalRange.value = Math.round(state.focal);
+  ui.parallaxRange.value = Math.round(state.parallax);
+  syncControls();
+  renderLayerList();
+}
+
+function selectItemByDepth(mode) {
+  if (!state.items.length) return;
+  const sorted = [...state.items].sort((a, b) => a.z - b.z);
+  if (mode === "near") state.selectedId = sorted[0].id;
+  if (mode === "far") state.selectedId = sorted[sorted.length - 1].id;
+  if (mode === "middle") state.selectedId = sorted[Math.floor(sorted.length / 2)].id;
+}
+
+function updateCaption(text) {
+  if (ui.voiceCaptionPreview) ui.voiceCaptionPreview.textContent = text;
+  if (!ui.stageSubtitle) return;
+  ui.stageSubtitle.textContent = text;
+  ui.stageSubtitle.classList.toggle("visible", Boolean(text));
+}
+
+function speakReply(text) {
+  if (!("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "zh-CN";
+  utterance.rate = 0.95;
+  utterance.pitch = 1;
+  window.speechSynthesis.speak(utterance);
+}
+
+function getCurrentBeat() {
+  return scriptBeats[ui.scriptBeatSelect.value] ?? scriptBeats.opening;
+}
+
+function setVoiceStatus(message, tone = "") {
+  ui.voiceStatus.textContent = message;
+  ui.voiceStatus.classList.toggle("listening", tone === "listening");
+  ui.voiceStatus.classList.toggle("thinking", tone === "thinking");
+  ui.voiceStatus.classList.toggle("error", tone === "error");
+}
+
+function describeSpeechError(error) {
+  if (error === "not-allowed") return "浏览器拒绝了麦克风权限";
+  if (error === "no-speech") return "没有听到清晰语音，请再试一次";
+  if (error === "audio-capture") return "没有检测到可用麦克风";
+  return "语音识别暂时不可用";
 }
 
 function getSelected() {
