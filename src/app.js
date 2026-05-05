@@ -168,7 +168,7 @@ const rangeConfigs = {
   xRange: { itemKey: "x", min: -520, max: 520, neutral: 50 },
   yRange: { itemKey: "y", min: -320, max: 320, neutral: 50 },
   zRange: { itemKey: "z", min: -260, max: 980 },
-  scaleRange: { itemKey: "scale", min: 0.3, max: 1.8 },
+  scaleRange: { itemKey: "scale", min: 0.3, max: 4.0 },
   rotationRange: { itemKey: "rotation", min: degreesToRadians(-35), max: degreesToRadians(35), neutral: 50 },
   tiltRange: { itemKey: "tilt", min: degreesToRadians(-45), max: degreesToRadians(45), neutral: 50 },
 };
