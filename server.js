@@ -1,12 +1,25 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 const rootDir = __dirname;
 const port = Number(process.env.PORT || 5174);
 const moonshotApiKey = process.env.MOONSHOT_API_KEY || "";
 const moonshotBaseUrl = process.env.MOONSHOT_BASE_URL || "https://api.moonshot.cn/v1";
 const kimiModel = process.env.KIMI_MODEL || "kimi-k2.6";
+const xfyunAppId = process.env.XFYUN_APP_ID || "";
+const xfyunApiKey = process.env.XFYUN_API_KEY || "";
+const xfyunApiSecret = process.env.XFYUN_API_SECRET || "";
+const xfyunTtsUrl =
+  process.env.XFYUN_TTS_URL || "wss://cbm01.cn-huabei-1.xf-yun.com/v1/private/mcd9m97e6";
+const xfyunTtsVoice = process.env.XFYUN_TTS_VOICE || "x6_lingfeiyi_pro";
+const xfyunVoiceOptions = new Set([
+  "x6_lingfeiyi_pro",
+  "x6_lingxiaoxuan_pro",
+  "x6_lingyuyan_pro",
+  "x6_lingbosong_pro",
+]);
 const dataDir = path.join(rootDir, "data");
 const uploadsDir = path.join(rootDir, "uploads");
 const dbPath = path.join(dataDir, "scene-layout-db.json");
@@ -21,6 +34,11 @@ const mimeTypes = {
   ".mov": "video/quicktime",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
   ".txt": "text/plain; charset=utf-8",
 };
 
@@ -49,6 +67,11 @@ const server = http.createServer(async (request, response) => {
 
     if (url.pathname === "/api/director-cue") {
       await handleDirectorCue(request, response);
+      return;
+    }
+
+    if (url.pathname === "/api/tts") {
+      await handleTts(request, response);
       return;
     }
 
@@ -95,7 +118,7 @@ async function handleLayout(request, response, url) {
   if (request.method === "POST") {
     const body = await readJsonBody(request, 4 * 1024 * 1024);
     const id = sanitizeSceneId(body.id || url.searchParams.get("id") || "default");
-    const name = sanitizeSceneName(body.name || body.sceneName || id);
+    const name = id === "default" ? "默认场景" : sanitizeSceneName(body.name || body.sceneName || id);
     writeLayoutPayload(id, name, body);
     sendJson(response, 200, { ok: true, id, name, savedAt: new Date().toISOString() });
     return;
@@ -113,7 +136,7 @@ async function handleAssets(request, response, url) {
   if (request.method === "POST") {
     const filename = sanitizeFilename(url.searchParams.get("filename") || "asset.bin");
     const ext = path.extname(filename).toLowerCase();
-    if (![".png", ".gif", ".mov", ".mp4", ".webm"].includes(ext)) {
+    if (![".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"].includes(ext)) {
       sendJson(response, 415, { error: "unsupported_media_type" });
       return;
     }
@@ -154,7 +177,10 @@ async function handleDirectorCue(request, response) {
 
   const beatKey = scriptBeats[body.beatKey] ? body.beatKey : "opening";
   const conversation = sanitizeConversation(body.conversation);
-  const messages = buildDirectorMessages(text, beatKey, conversation);
+  const scene = normalizeDirectorScene(body.scene);
+  const variables = normalizeDirectorVariables(body.variables);
+  const age = scene.ageFeedback ? Number(scene.user_age || variables.user_age || 0) || null : scene.ageRequired ? extractAge(text) : null;
+  const messages = buildDirectorMessages(text, beatKey, conversation, { scene, variables, age });
 
   const { response: upstreamResponse, payload: upstreamPayload } = await requestMoonshot(messages);
   if (!upstreamResponse.ok) {
@@ -168,13 +194,16 @@ async function handleDirectorCue(request, response) {
   const content = upstreamPayload.choices?.[0]?.message?.content || "";
   const reply = extractReplyText(content);
   sendJson(response, 200, {
-    cue: directorCueFromReply(reply, text, beatKey),
+    cue: directorCueFromReply(reply, text, beatKey, { scene, variables, age }),
     warning: reply ? null : "Moonshot response was empty; used local fallback.",
     debug: {
       request: {
         url: `${moonshotBaseUrl}/chat/completions`,
         model: kimiModel,
         beatKey,
+        scene,
+        variables,
+        extractedAge: age,
         messages,
       },
       response: upstreamPayload,
@@ -182,6 +211,46 @@ async function handleDirectorCue(request, response) {
       extractedReply: reply,
     },
   });
+}
+
+async function handleTts(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "method_not_allowed" });
+    return;
+  }
+
+  if (!xfyunAppId || !xfyunApiKey || !xfyunApiSecret) {
+    sendJson(response, 503, {
+      error: "missing_xfyun_credentials",
+      message: "Server missing XFYUN_APP_ID, XFYUN_API_KEY or XFYUN_API_SECRET.",
+    });
+    return;
+  }
+
+  const body = await readJsonBody(request, 16 * 1024);
+  const text = cleanTtsText(typeof body.text === "string" ? body.text : "");
+  const voice = normalizeXfyunVoice(body.voice);
+  if (!text) {
+    sendJson(response, 400, { error: "invalid_request", message: "text is required." });
+    return;
+  }
+
+  try {
+    const audio = await synthesizeXfyunTts(text, voice);
+    response.writeHead(200, {
+      "Content-Type": "audio/mpeg",
+      "Content-Length": audio.length,
+      "Cache-Control": "no-store",
+      "X-TTS-Provider": "xfyun-super-smart-tts",
+      "X-TTS-Voice": voice,
+    });
+    response.end(audio);
+  } catch (error) {
+    sendJson(response, 502, {
+      error: "xfyun_tts_failed",
+      message: error.message,
+    });
+  }
 }
 
 async function requestMoonshot(messages) {
@@ -256,9 +325,40 @@ async function serveStaticFile(pathname, request, response) {
     return;
   }
 
+  const range = request.headers.range;
+  if (range) {
+    const match = String(range).match(/^bytes=(\d*)-(\d*)$/);
+    if (!match) {
+      response.writeHead(416, { "Content-Range": `bytes */${stat.size}` });
+      response.end();
+      return;
+    }
+    const start = match[1] ? Number(match[1]) : 0;
+    const end = match[2] ? Number(match[2]) : stat.size - 1;
+    if (start >= stat.size || end >= stat.size || start > end) {
+      response.writeHead(416, { "Content-Range": `bytes */${stat.size}` });
+      response.end();
+      return;
+    }
+    response.writeHead(206, {
+      "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "Content-Length": end - start + 1,
+      "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store",
+    });
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
+    fs.createReadStream(filePath, { start, end }).pipe(response);
+    return;
+  }
+
   response.writeHead(200, {
     "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
     "Content-Length": stat.size,
+    "Accept-Ranges": "bytes",
     "Cache-Control": "no-store",
   });
 
@@ -322,7 +422,7 @@ function listLayoutScenes(includeDetails = false) {
   return Object.entries(db.layouts || {})
     .map(([id, entry]) => ({
       id,
-      name: entry.name || (id === "default" ? "默认场景" : id),
+      name: id === "default" ? "默认场景" : entry.name || id,
       updatedAt: entry.updatedAt || "",
       ...(includeDetails ? { layout: normalizeLayoutPayload(entry.payload, id, entry.name) } : {}),
     }))
@@ -383,7 +483,10 @@ function normalizeDatabase(db) {
       typeof entry.payload === "string" ? safeJsonParse(entry.payload) : entry.payload || {};
     const embeddedId = rawPayload.id && rawPayload.id !== id ? sanitizeSceneId(rawPayload.id) : "";
     const payload = normalizeLayoutPayload(entry.payload, id, entry.name);
-    entry.name = entry.name || payload.name || (id === "default" ? "默认场景" : id);
+    const nextName = id === "default" ? "默认场景" : entry.name || payload.name || id;
+    if (entry.name !== nextName || entry.payload?.name !== nextName) changed = true;
+    entry.name = nextName;
+    payload.name = nextName;
     entry.payload = payload;
 
     if (embeddedId && !db.layouts[embeddedId]) {
@@ -417,7 +520,7 @@ function normalizeLayoutPayload(raw, id, name) {
   return {
     ...payload,
     id,
-    name: name || payload.name || (id === "default" ? "默认场景" : id),
+    name: id === "default" ? "默认场景" : name || payload.name || id,
     scene: payload.scene || {},
     items: Array.isArray(payload.items) ? payload.items : [],
   };
@@ -452,7 +555,7 @@ async function collectAssetFiles(dir, base, files) {
       continue;
     }
     const ext = path.extname(entry.name).toLowerCase();
-    if (![".png", ".gif", ".mov", ".mp4", ".webm"].includes(ext)) continue;
+    if (![".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"].includes(ext)) continue;
     files.push(assetFromFile(fullPath, base));
   }
 }
@@ -477,7 +580,143 @@ function getAssetType(filePath) {
   if (ext === ".mov") return "video/quicktime";
   if (ext === ".webm") return "video/webm";
   if (ext === ".mp4") return "video/mp4";
+  if (ext === ".mp3") return "audio/mpeg";
+  if (ext === ".wav") return "audio/wav";
+  if (ext === ".ogg") return "audio/ogg";
+  if (ext === ".m4a") return "audio/mp4";
+  if (ext === ".aac") return "audio/aac";
   return "application/octet-stream";
+}
+
+function synthesizeXfyunTts(text, voice) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(buildXfyunAuthUrl(xfyunTtsUrl, xfyunApiKey, xfyunApiSecret));
+    const chunks = [];
+    const timer = setTimeout(() => {
+      try {
+        ws.close();
+      } catch {}
+      reject(new Error("讯飞 TTS 请求超时"));
+    }, 30000);
+
+    ws.addEventListener("open", () => {
+      ws.send(JSON.stringify(buildXfyunTtsPayload(text, voice)));
+    });
+
+    ws.addEventListener("message", (event) => {
+      try {
+        const message = JSON.parse(String(event.data));
+        const code = message.header?.code ?? 0;
+        if (code !== 0) {
+          clearTimeout(timer);
+          ws.close();
+          reject(new Error(`讯飞 TTS 错误 ${code}: ${message.header?.message || "unknown"}`));
+          return;
+        }
+
+        const audio = message.payload?.audio;
+        if (audio?.audio) {
+          chunks.push({
+            seq: Number(audio.seq ?? chunks.length),
+            buffer: Buffer.from(audio.audio, "base64"),
+          });
+        }
+
+        if (message.header?.status === 2 || audio?.status === 2) {
+          clearTimeout(timer);
+          ws.close();
+          chunks.sort((a, b) => a.seq - b.seq);
+          resolve(Buffer.concat(chunks.map((chunk) => chunk.buffer)));
+        }
+      } catch (error) {
+        clearTimeout(timer);
+        ws.close();
+        reject(error);
+      }
+    });
+
+    ws.addEventListener("error", () => {
+      clearTimeout(timer);
+      reject(new Error("讯飞 TTS WebSocket 连接失败"));
+    });
+
+    ws.addEventListener("close", () => {
+      clearTimeout(timer);
+      if (!chunks.length) reject(new Error("讯飞 TTS 未返回音频"));
+    });
+  });
+}
+
+function buildXfyunTtsPayload(text, voice) {
+  return {
+    header: {
+      app_id: xfyunAppId,
+      status: 2,
+    },
+    parameter: {
+      oral: {
+        oral_level: "mid",
+        spark_assist: 1,
+        stop_split: 0,
+        remain: 0,
+      },
+      tts: {
+        vcn: voice,
+        speed: 50,
+        volume: 60,
+        pitch: 45,
+        bgs: 0,
+        reg: 0,
+        rdn: 0,
+        rhy: 0,
+        audio: {
+          encoding: "lame",
+          sample_rate: 24000,
+          channels: 1,
+          bit_depth: 16,
+          frame_size: 0,
+        },
+      },
+    },
+    payload: {
+      text: {
+        encoding: "utf8",
+        compress: "raw",
+        format: "plain",
+        status: 2,
+        seq: 0,
+        text: Buffer.from(text, "utf8").toString("base64"),
+      },
+    },
+  };
+}
+
+function buildXfyunAuthUrl(requestUrl, apiKey, apiSecret) {
+  const url = new URL(requestUrl);
+  const date = new Date().toUTCString();
+  const signatureOrigin = `host: ${url.host}\ndate: ${date}\nGET ${url.pathname} HTTP/1.1`;
+  const signature = crypto
+    .createHmac("sha256", apiSecret)
+    .update(signatureOrigin)
+    .digest("base64");
+  const authorizationOrigin = `api_key="${apiKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`;
+  url.searchParams.set("host", url.host);
+  url.searchParams.set("date", date);
+  url.searchParams.set("authorization", Buffer.from(authorizationOrigin).toString("base64"));
+  return url.toString();
+}
+
+function cleanTtsText(value) {
+  return value
+    .replace(/[\t\r\n]+/g, " ")
+    .replace(/[<>`*_#{}[\]|\\]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .slice(0, 600);
+}
+
+function normalizeXfyunVoice(value) {
+  return xfyunVoiceOptions.has(value) ? value : xfyunTtsVoice;
 }
 
 function sanitizeFilename(filename) {
@@ -520,7 +759,11 @@ function parseDirectorCue(content) {
   }
 }
 
-function directorCueFromReply(replyText, userText, beatKey) {
+function directorCueFromReply(replyText, userText, beatKey, context = {}) {
+  const scene = context.scene || {};
+  const age = context.age;
+  const requiresAge = Boolean(scene.ageRequired);
+  const isAgeFeedback = Boolean(scene.ageFeedback);
   const reply = String(replyText || "").trim();
   const nextBeat = {
     opening: "choice",
@@ -532,9 +775,26 @@ function directorCueFromReply(replyText, userText, beatKey) {
   const wantsHidden = /暗|隐藏|秘密|背叛|怀疑|骗/.test(userText);
   const wantsFar = /远|后|全景|整体|岛|海/.test(userText);
 
+  const ageReply = requiresAge || isAgeFeedback
+    ? age
+      ? `那看来你没傻。${age}岁，记住了。走。`
+      : "不行，你必须告诉我年龄。别绕开。你几岁？"
+    : "";
+
   return {
-    reply: reply.slice(0, 80) || "我听见了。先找水，还是先生火？选一个。",
+    reply: (ageReply || reply).slice(0, 80) || "我听见了。先找水，还是先生火？选一个。",
     nextBeat,
+    flow: requiresAge
+      ? {
+          ageRequired: true,
+          ageExtracted: Boolean(age),
+          user_age: age,
+          variables: age ? { user_age: age } : {},
+          feedbackSceneId: scene.nextSceneId,
+          sourceSceneId: scene.id,
+          successNextSceneId: scene.successNextSceneId || "",
+        }
+      : {},
     stage: {
       focus: wantsNear ? "near" : wantsFar ? "far" : "selected",
       mood: wantsHidden ? "hidden" : beatKey === "reveal" ? "tense" : "calm",
@@ -567,8 +827,20 @@ function extractReplyText(value) {
   return text.replace(/```(?:json)?|```/g, "").trim();
 }
 
-function buildDirectorMessages(text, beatKey, conversation) {
+function buildDirectorMessages(text, beatKey, conversation, context = {}) {
   const beat = scriptBeats[beatKey];
+  const scene = context.scene || {};
+  const variables = context.variables || {};
+  const age = context.age;
+  const ageInstruction = scene.ageFeedback
+    ? scene.ageExtracted
+      ? `这是年龄判定反馈场景。已经成功获取年龄：${age}。不用等待用户继续说话。你的回复必须包含“那看来你没傻”类似含义，并复述年龄。`
+      : "这是年龄判定反馈场景。上一场景没有成功获取年龄。不用等待用户继续说话。你的回复必须包含“不行，你必须告诉我年龄”类似含义，并要求重新说年龄。"
+    : scene.ageRequired
+    ? age
+      ? `当前场景要求获取年龄。已经从用户输入中提取到年龄：${age}。你的回复必须包含“那看来你没傻”类似含义，并推动进入下一场景。`
+      : "当前场景要求获取年龄，但没有从用户输入中提取到年龄。你的回复必须包含“不行，你必须告诉我年龄”类似含义，并继续逼问年龄。"
+    : "";
   return [
     {
       role: "system",
@@ -591,7 +863,15 @@ function buildDirectorMessages(text, beatKey, conversation) {
     ...conversation,
     {
       role: "user",
-      content: `当前走向：${beat.title}\n导演意图：${beat.direction}\n观众说：${text}`,
+      content: [
+        `当前走向：${beat.title}`,
+        `导演意图：${beat.direction}`,
+        `当前变量：${JSON.stringify(variables)}`,
+        ageInstruction,
+        `观众说：${text}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
     },
   ];
 }
@@ -605,6 +885,64 @@ function sanitizeConversation(value) {
       content: typeof message?.content === "string" ? message.content.slice(0, 800) : "",
     }))
     .filter((message) => message.content.trim());
+}
+
+function normalizeDirectorScene(scene) {
+  if (!scene || typeof scene !== "object") {
+    return { id: "", ageRequired: false, nextSceneId: "" };
+  }
+  return {
+    id: sanitizeSceneId(scene.id || ""),
+    ageRequired: Boolean(scene.ageRequired),
+    nextSceneId: sanitizeSceneId(scene.nextSceneId || ""),
+    ageFeedback: Boolean(scene.ageFeedback),
+    ageExtracted: Boolean(scene.ageExtracted),
+    user_age: scene.user_age,
+    sourceSceneId: sanitizeSceneId(scene.sourceSceneId || ""),
+    successNextSceneId: sanitizeSceneId(scene.successNextSceneId || ""),
+  };
+}
+
+function normalizeDirectorVariables(value) {
+  if (!value || typeof value !== "object") return {};
+  const variables = {};
+  if (value.user_age !== undefined) {
+    const age = Number(value.user_age);
+    if (Number.isFinite(age)) variables.user_age = age;
+  }
+  return variables;
+}
+
+function extractAge(text) {
+  const value = String(text || "");
+  const direct = value.match(/(?:我)?\s*(?:今年)?\s*(\d{1,3})\s*(?:岁|歲|周岁|周歲|了)?/);
+  if (direct) {
+    const age = Number(direct[1]);
+    if (age >= 1 && age <= 120) return age;
+  }
+  const cn = value.match(/([零〇一二两三四五六七八九十百]{1,5})\s*(?:岁|歲|周岁|周歲)/);
+  if (cn) {
+    const age = parseChineseNumber(cn[1]);
+    if (age >= 1 && age <= 120) return age;
+  }
+  return null;
+}
+
+function parseChineseNumber(text) {
+  const map = { 零: 0, "〇": 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  if (text === "十") return 10;
+  const hundredIndex = text.indexOf("百");
+  if (hundredIndex >= 0) {
+    const hundreds = hundredIndex === 0 ? 1 : map[text[hundredIndex - 1]] || 0;
+    return hundreds * 100 + parseChineseNumber(text.slice(hundredIndex + 1));
+  }
+  const tenIndex = text.indexOf("十");
+  if (tenIndex >= 0) {
+    const tens = tenIndex === 0 ? 1 : map[text[tenIndex - 1]] || 0;
+    const ones = tenIndex === text.length - 1 ? 0 : map[text[tenIndex + 1]] || 0;
+    return tens * 10 + ones;
+  }
+  return [...text].reduce((sum, char) => sum * 10 + (map[char] ?? 0), 0);
 }
 
 function sanitizeEnum(value, allowed, fallback) {

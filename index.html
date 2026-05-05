@@ -45,8 +45,71 @@
                   </select>
                 </label>
                 <input id="sceneNameInput" type="text" value="默认场景" aria-label="场景名称" />
+                <label>
+                  <span>讯飞发音人</span>
+                  <select id="xfyunVoiceSelect" aria-label="选择当前场景的讯飞发音人">
+                    <option value="x6_lingfeiyi_pro">聆飞逸 x6_lingfeiyi_pro</option>
+                    <option value="x6_lingxiaoxuan_pro">聆小璇 x6_lingxiaoxuan_pro</option>
+                    <option value="x6_lingyuyan_pro">聆玉言 x6_lingyuyan_pro</option>
+                    <option value="x6_lingbosong_pro">聆伯松 x6_lingbosong_pro</option>
+                  </select>
+                </label>
                 <button id="saveLayoutButton" type="button">保存布局</button>
                 <button id="saveAsLayoutButton" type="button">另存为布局</button>
+                <label class="file-button scene-audio-button">
+                  <input
+                    id="sceneAudioInput"
+                    type="file"
+                    accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,.mp3,.wav,.ogg,.m4a,.aac"
+                  />
+                  <span>上传场景音频</span>
+                </label>
+                <span id="sceneAudioName" class="scene-audio-name empty">未设置音频</span>
+                <label class="switch-row">
+                  <span>GIF 循环播放</span>
+                  <input id="gifLoopToggle" type="checkbox" checked />
+                </label>
+                <label class="switch-row">
+                  <span>音频循环播放</span>
+                  <input id="audioLoopToggle" type="checkbox" checked />
+                </label>
+                <label class="switch-row">
+                  <span>需要获取年龄</span>
+                  <input id="ageRequiredToggle" type="checkbox" />
+                </label>
+                <label>
+                  <span>场景结束后</span>
+                  <select id="sceneEndMode">
+                    <option value="none">不自动跳转</option>
+                    <option value="auto">直接进入下一场景</option>
+                    <option value="dialog">等待对话关键词</option>
+                  </select>
+                </label>
+                <label data-flow-visible="auto" hidden>
+                  <span>下一场景</span>
+                  <select id="sceneNextSceneSelect">
+                    <option value="">不指定</option>
+                  </select>
+                </label>
+                <div class="scene-flow-routes" data-flow-visible="dialog" hidden>
+                  <span class="scene-flow-title">关键词跳转</span>
+                  <div class="scene-flow-route" data-flow-route>
+                    <input data-flow-keywords type="text" placeholder="关键词，如：火、点燃" />
+                    <select data-flow-scene><option value="">不指定</option></select>
+                  </div>
+                  <div class="scene-flow-route" data-flow-route>
+                    <input data-flow-keywords type="text" placeholder="关键词，如：水、喝" />
+                    <select data-flow-scene><option value="">不指定</option></select>
+                  </div>
+                  <div class="scene-flow-route" data-flow-route>
+                    <input data-flow-keywords type="text" placeholder="关键词" />
+                    <select data-flow-scene><option value="">不指定</option></select>
+                  </div>
+                  <div class="scene-flow-route" data-flow-route>
+                    <input data-flow-keywords type="text" placeholder="关键词" />
+                    <select data-flow-scene><option value="">不指定</option></select>
+                  </div>
+                </div>
               </div>
 
               <a class="demo-link" href="./viewer.html" target="_blank" rel="noreferrer">打开演示页</a>
@@ -87,6 +150,7 @@
           <main class="stage-wrap">
             <canvas id="stage" aria-label="三维拼贴画布"></canvas>
             <div id="mediaOverlay" class="media-overlay" aria-hidden="true"></div>
+            <audio id="sceneAudio" preload="auto"></audio>
             <div id="stageSubtitle" class="stage-subtitle" aria-live="polite"></div>
           </main>
 

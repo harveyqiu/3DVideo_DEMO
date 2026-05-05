@@ -26,8 +26,10 @@ http://127.0.0.1:5174/viewer.html
 
 ## 功能
 
-- 支持导入 PNG、GIF、MOV、WebM。
-- GIF 使用 DOM 媒体层覆盖在 Canvas 上，保持动画播放。
+- 支持导入 PNG、GIF、MOV、WebM，并支持为每个场景上传 MP3、WAV、OGG、M4A、AAC 音频。
+- GIF 使用 DOM 媒体层覆盖在 Canvas 上，保持动画播放；关闭 GIF 循环时会用浏览器 ImageDecoder 解码并停在最后一帧。
+- 场景会保存音频资源、GIF 循环、音频循环等属性，viewer.html 和 final.html 会读取同一份设置。
+- 场景可以保存结束后的流转关系：不跳转、自动进入下一场景，或等待玩家对话并按关键词进入指定场景。
 - 视频和图片图层支持 X、Y、深度、缩放、旋转、倾斜调节。
 - 编辑页会把导入素材上传到本地 `uploads/`，并把布局保存到 `data/scene-layout-db.json`。
 - 刷新网页后会从本地后端恢复上次保存的素材地址和位置信息。
@@ -44,6 +46,9 @@ http://127.0.0.1:5174/viewer.html
 
 ```powershell
 $env:MOONSHOT_API_KEY="你的 Moonshot API Key"
+$env:XFYUN_APP_ID="你的讯飞 AppID"
+$env:XFYUN_API_KEY="你的讯飞 APIKey"
+$env:XFYUN_API_SECRET="你的讯飞 APISecret"
 node server.js
 ```
 
@@ -52,6 +57,9 @@ node server.js
 - 点击“开始对话”测试麦克风语音识别。
 - 在“文字测试”里输入一句观众台词，可绕过麦克风直接验证 Kimi 回复、TTS 播报和字幕生成。
 - 后端通过 `/api/director-cue` 代理请求 Kimi，不会把 API Key 放进浏览器端代码。
+- 后端通过 `/api/tts` 代理请求讯飞超拟人语音合成，默认使用聆飞逸 `x6_lingfeiyi_pro`，不会再使用浏览器自带 TTS。
+- 每个场景可以单独选择讯飞发音人：聆飞逸、聆小璇、聆玉言、聆伯松。选择会保存到场景配置的 `scene.xfyunVoice`。
+- 场景可勾选“需要获取年龄”。勾选后，用户语音会先被提取年龄，并无论成功失败都进入该场景配置的下一场景作为“年龄反馈场景”。反馈场景会自动调用 Kimi：成功时保存变量 `user_age` 并复述年龄，随后在语音和 GIF 播完后进入反馈场景配置的下一场景；失败时要求用户必须告诉年龄，随后回到获取年龄场景循环。
 
 ## 场景接口
 
@@ -73,4 +81,4 @@ GET /api/layout?list=1&details=1
 GET /api/layout?id=场景ID
 ```
 
-每个场景会记录素材文件地址、素材类型、X/Y/深度/缩放/旋转/倾斜/透明度等信息，供后续剧本系统按场景 ID 调用。
+每个场景会记录素材文件地址、素材类型、X/Y/深度/缩放/旋转/倾斜/透明度，以及场景音频、GIF 循环、音频循环、结束后流转规则等信息，供后续剧本系统按场景 ID 调用。

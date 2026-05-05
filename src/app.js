@@ -2,6 +2,7 @@ const canvas = document.querySelector("#stage");
 const ctx = canvas.getContext("2d", { alpha: false });
 const appMode = document.body.dataset.mode || "editor";
 const isViewer = appMode === "viewer";
+const isFinal = appMode === "final";
 
 const ui = {
   fileInput: document.querySelector("#fileInput"),
@@ -11,6 +12,16 @@ const ui = {
   saveAsLayoutButton: document.querySelector("#saveAsLayoutButton"),
   sceneSelect: document.querySelector("#sceneSelect"),
   sceneNameInput: document.querySelector("#sceneNameInput"),
+  xfyunVoiceSelect: document.querySelector("#xfyunVoiceSelect"),
+  sceneAudioInput: document.querySelector("#sceneAudioInput"),
+  sceneAudioName: document.querySelector("#sceneAudioName"),
+  sceneAudio: document.querySelector("#sceneAudio"),
+  gifLoopToggle: document.querySelector("#gifLoopToggle"),
+  audioLoopToggle: document.querySelector("#audioLoopToggle"),
+  ageRequiredToggle: document.querySelector("#ageRequiredToggle"),
+  sceneEndMode: document.querySelector("#sceneEndMode"),
+  sceneNextSceneSelect: document.querySelector("#sceneNextSceneSelect"),
+  flowRouteRows: document.querySelectorAll("[data-flow-route]"),
   exportButton: document.querySelector("#exportButton"),
   deleteButton: document.querySelector("#deleteButton"),
   layerList: document.querySelector("#layerList"),
@@ -47,6 +58,7 @@ const ui = {
   tiltRange: document.querySelector("#tiltRange"),
   layoutStatus: document.querySelector("#layoutStatus"),
   viewerStartButton: document.querySelector("#viewerStartButton"),
+  playPauseButton: document.querySelector("#playPauseButton"),
   values: {
     focalRange: document.querySelector("#focalValue"),
     parallaxRange: document.querySelector("#parallaxValue"),
@@ -82,7 +94,26 @@ const state = {
   currentSceneName: "默认场景",
   scenes: [],
   loadingScene: true,
+  sceneAudioAsset: null,
+  audioLoop: true,
+  gifLoop: true,
+  sceneFlow: {
+    mode: "none",
+    nextSceneId: "",
+    routes: [],
+  },
+  sceneEnded: false,
+  xfyunVoice: "x6_lingfeiyi_pro",
+  ageRequired: false,
+  userVariables: {},
+  pendingAgeFlow: null,
+  activeTts: null,
   gifElements: new Map(),
+  gifPlayers: new Map(),
+  gifPauseFrames: new Map(),
+  scenePlaybackToken: 0,
+  paused: false,
+  transitionToken: 0,
   voice: {
     recognition: null,
     listening: false,
@@ -153,12 +184,20 @@ async function init() {
   syncControls();
   requestAnimationFrame(draw);
   if (isViewer) {
-    ui.viewerStartButton?.addEventListener("click", () => startCamera());
+    ui.viewerStartButton?.addEventListener("click", () => {
+      startCamera();
+      playSceneAudio();
+    });
+  }
+  if (isFinal) {
+    updateCaption("你醒了。先判断方向，再决定找火还是找水。");
   }
 }
 
 function bindEvents() {
   window.addEventListener("resize", resize);
+  window.addEventListener("pointerdown", () => playSceneAudio(), { once: true });
+  window.addEventListener("keydown", () => playSceneAudio(), { once: true });
 
   ui.tabButtons.forEach((button) => {
     button.addEventListener("click", () => activateTab(button.dataset.tabTarget));
@@ -175,6 +214,7 @@ function bindEvents() {
     } else {
       startCamera();
     }
+    playSceneAudio();
   });
 
   ui.cameraSelect.addEventListener("change", () => {
@@ -194,6 +234,54 @@ function bindEvents() {
   ui.saveLayoutButton?.addEventListener("click", () => saveLayoutNow());
   ui.saveAsLayoutButton?.addEventListener("click", () => saveAsLayout());
   ui.sceneSelect?.addEventListener("change", () => switchScene(ui.sceneSelect.value));
+  ui.xfyunVoiceSelect?.addEventListener("change", () => {
+    state.xfyunVoice = normalizeXfyunVoice(ui.xfyunVoiceSelect.value);
+    ui.xfyunVoiceSelect.value = state.xfyunVoice;
+    scheduleSaveLayout();
+  });
+  ui.sceneAudioInput?.addEventListener("change", async (event) => {
+    const [file] = event.target.files || [];
+    if (!file || !isSupportedAudioFile(file)) return;
+    const asset = await uploadAsset(file).catch(() => localAssetFromFile(file));
+    state.sceneAudioAsset = asset;
+    setupSceneAudio();
+    scheduleSaveLayout();
+    ui.sceneAudioInput.value = "";
+  });
+  ui.gifLoopToggle?.addEventListener("change", () => {
+    state.gifLoop = ui.gifLoopToggle.checked;
+    resetGifPlayback();
+    scheduleSaveLayout();
+  });
+  ui.audioLoopToggle?.addEventListener("change", () => {
+    state.audioLoop = ui.audioLoopToggle.checked;
+    setupSceneAudio();
+    scheduleSaveLayout();
+  });
+  ui.ageRequiredToggle?.addEventListener("change", () => {
+    state.ageRequired = ui.ageRequiredToggle.checked;
+    scheduleSaveLayout();
+  });
+  ui.sceneAudio?.addEventListener("ended", () => handleSceneMediaEnded());
+  ui.sceneEndMode?.addEventListener("change", () => {
+    state.sceneFlow.mode = ui.sceneEndMode.value;
+    syncSceneFlowControls();
+    scheduleSaveLayout();
+  });
+  ui.sceneNextSceneSelect?.addEventListener("change", () => {
+    state.sceneFlow.nextSceneId = ui.sceneNextSceneSelect.value;
+    scheduleSaveLayout();
+  });
+  ui.flowRouteRows.forEach((row) => {
+    row.querySelector("[data-flow-keywords]")?.addEventListener("input", () => {
+      state.sceneFlow.routes = readSceneFlowRoutesFromControls();
+      scheduleSaveLayout();
+    });
+    row.querySelector("[data-flow-scene]")?.addEventListener("change", () => {
+      state.sceneFlow.routes = readSceneFlowRoutesFromControls();
+      scheduleSaveLayout();
+    });
+  });
   ui.voiceButton.addEventListener("click", toggleVoiceListening);
   ui.voiceTextSendButton?.addEventListener("click", () => sendManualVoiceText());
   ui.micLevelButton?.addEventListener("click", () => toggleMicLevelMonitor());
@@ -203,6 +291,7 @@ function bindEvents() {
       sendManualVoiceText();
     }
   });
+  ui.playPauseButton?.addEventListener("click", togglePlayback);
   ui.scriptBeatSelect.addEventListener("change", () => {
     setVoiceStatus(`已切换到：${getCurrentBeat().title}`);
   });
@@ -468,6 +557,10 @@ function isSupportedMediaFile(file) {
   return /image\/(png|gif)/.test(file.type) || isMovFile(file) || isWebmFile(file);
 }
 
+function isSupportedAudioFile(file) {
+  return /^audio\//.test(file.type) || /\.(mp3|wav|ogg|m4a|aac)$/i.test(file.name);
+}
+
 function isMovFile(file) {
   return file.type === "video/quicktime" || /\.mov$/i.test(file.name);
 }
@@ -482,6 +575,10 @@ function isVideoAsset(asset) {
 
 function isGifAsset(asset) {
   return asset.type === "image/gif" || /\.gif$/i.test(asset.url);
+}
+
+function isAudioAsset(asset) {
+  return /^audio\//.test(asset.type) || /\.(mp3|wav|ogg|m4a|aac)$/i.test(asset.url);
 }
 
 async function uploadAsset(file) {
@@ -499,7 +596,13 @@ function localAssetFromFile(file) {
     key: `local/${file.name}-${Date.now()}`,
     name: file.name,
     url: URL.createObjectURL(file),
-    type: file.type || (isMovFile(file) ? "video/quicktime" : "application/octet-stream"),
+    type:
+      file.type ||
+      (isMovFile(file)
+        ? "video/quicktime"
+        : isSupportedAudioFile(file)
+          ? inferAssetType(file.name)
+          : "application/octet-stream"),
     size: file.size,
   };
 }
@@ -566,6 +669,9 @@ async function loadInitialScene() {
   setLayoutStatus("正在读取布局");
   try {
     await loadSceneList();
+    if (isFinal && !new URLSearchParams(window.location.search).has("scene")) {
+      state.currentSceneId = resolveSceneAlias("scene1") || state.currentSceneId;
+    }
     syncSceneControls();
     const loaded = await loadSceneById(state.currentSceneId);
     if (loaded) return;
@@ -595,13 +701,22 @@ async function loadSceneById(sceneId) {
   const layout = await response.json();
   const hasItems = Array.isArray(layout.items) && layout.items.length > 0;
   state.currentSceneId = layout.id || sceneId;
-  state.currentSceneName = layout.name || state.currentSceneId;
+  state.currentSceneName =
+    state.currentSceneId === "default" ? "默认场景" : layout.name || state.currentSceneId;
   state.focal = Number(layout.scene?.focal ?? state.focal);
   state.parallax = Number(layout.scene?.parallax ?? state.parallax);
   state.showGrid = layout.scene?.showGrid !== false;
+  state.sceneAudioAsset = normalizeSceneAudioAsset(layout.scene?.audioAsset);
+  state.audioLoop = layout.scene?.audioLoop !== false;
+  state.gifLoop = layout.scene?.gifLoop !== false;
+  state.sceneFlow = normalizeSceneFlow(layout.scene?.flow || layout.scene?.sceneFlow);
+  state.xfyunVoice = normalizeXfyunVoice(layout.scene?.xfyunVoice || layout.scene?.ttsVoice);
+  state.ageRequired = Boolean(layout.scene?.ageRequired);
+  state.sceneEnded = false;
   ui.focalRange.value = String(valueToRange("focalRange", state.focal));
   ui.parallaxRange.value = String(valueToRange("parallaxRange", state.parallax));
   ui.gridToggle.checked = state.showGrid;
+  syncSceneMediaControls();
 
   clearSceneMedia();
   if (hasItems) {
@@ -614,9 +729,12 @@ async function loadSceneById(sceneId) {
   }
 
   syncSceneControls();
+  syncSceneFlowControls();
+  restartScenePlayback({ autoplay: isViewer || isFinal });
   updateRangeDisplays();
   setLayoutStatus(hasItems ? `已切换：${state.currentSceneName}` : `空场景：${state.currentSceneName}`, hasItems ? "good" : "warn");
   state.loadingScene = false;
+  maybeRunPendingAgeFeedback();
   return hasItems;
 }
 
@@ -642,21 +760,260 @@ function renderSceneOptions() {
   state.scenes.forEach((scene) => {
     const option = document.createElement("option");
     option.value = scene.id;
-    option.textContent = scene.name;
+    option.textContent = scene.id === "default" ? "默认场景" : scene.name;
     ui.sceneSelect.append(option);
   });
   ui.sceneSelect.value = state.currentSceneId;
+  renderSceneFlowOptions();
+}
+
+function renderSceneFlowOptions() {
+  const controls = [
+    ui.sceneNextSceneSelect,
+    ...[...ui.flowRouteRows].map((row) => row.querySelector("[data-flow-scene]")),
+  ].filter(Boolean);
+  controls.forEach((select) => {
+    const selected = select.value;
+    select.innerHTML = "";
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "不指定";
+    select.append(empty);
+    state.scenes.forEach((scene) => {
+      const option = document.createElement("option");
+      option.value = scene.id;
+      option.textContent = scene.id === "default" ? "默认场景" : scene.name || scene.id;
+      select.append(option);
+    });
+    select.value = selected && [...select.options].some((option) => option.value === selected) ? selected : "";
+  });
+}
+
+function resolveSceneAlias(alias) {
+  const number = String(alias).match(/\d+/)?.[0] ?? "";
+  if (!number) return "";
+  const exact = state.scenes.find((scene) => {
+    const text = `${scene.id} ${scene.name}`.toLowerCase();
+    return new RegExp(`(?:场景|scene)?\\s*${number}\\b`).test(text);
+  });
+  if (exact) return exact.id;
+  const loose = state.scenes.find((scene) => `${scene.id} ${scene.name}`.includes(number));
+  return loose?.id || (number === "1" ? state.scenes.find((scene) => scene.id === "default")?.id || "" : "");
 }
 
 function syncSceneControls() {
   renderSceneOptions();
-  if (ui.sceneNameInput) ui.sceneNameInput.value = state.currentSceneName;
+  if (ui.sceneNameInput) {
+    ui.sceneNameInput.value = state.currentSceneId === "default" ? "默认场景" : state.currentSceneName;
+  }
+  if (ui.xfyunVoiceSelect) {
+    ui.xfyunVoiceSelect.value = state.xfyunVoice;
+  }
+  syncSceneMediaControls();
+  syncSceneFlowControls();
   const demo = document.querySelector(".demo-link");
   if (demo) demo.href = `./viewer.html?scene=${encodeURIComponent(state.currentSceneId)}`;
 }
 
+function syncSceneFlowControls() {
+  renderSceneFlowOptions();
+  if (ui.sceneEndMode) ui.sceneEndMode.value = state.sceneFlow.mode || "none";
+  if (ui.ageRequiredToggle) ui.ageRequiredToggle.checked = state.ageRequired;
+  if (ui.sceneNextSceneSelect) ui.sceneNextSceneSelect.value = state.sceneFlow.nextSceneId || "";
+  const flowMode = ui.sceneEndMode?.value || state.sceneFlow.mode || "none";
+  document.querySelectorAll("[data-flow-visible]").forEach((element) => {
+    element.hidden = element.dataset.flowVisible !== flowMode;
+  });
+  ui.flowRouteRows.forEach((row, index) => {
+    const route = state.sceneFlow.routes[index] || {};
+    const keywords = row.querySelector("[data-flow-keywords]");
+    const scene = row.querySelector("[data-flow-scene]");
+    if (keywords) keywords.value = route.keywords || "";
+    if (scene) scene.value = route.sceneId || "";
+  });
+}
+
+function readSceneFlowRoutesFromControls() {
+  return [...ui.flowRouteRows]
+    .map((row) => ({
+      keywords: row.querySelector("[data-flow-keywords]")?.value.trim() || "",
+      sceneId: row.querySelector("[data-flow-scene]")?.value || "",
+    }))
+    .filter((route) => route.keywords || route.sceneId);
+}
+
+function normalizeSceneFlow(flow) {
+  const mode = ["none", "auto", "dialog"].includes(flow?.mode) ? flow.mode : "none";
+  return {
+    mode,
+    nextSceneId: String(flow?.nextSceneId || ""),
+    routes: Array.isArray(flow?.routes)
+      ? flow.routes.slice(0, 4).map((route) => ({
+          keywords: String(route.keywords || ""),
+          sceneId: String(route.sceneId || ""),
+        }))
+      : [],
+  };
+}
+
+function syncSceneMediaControls() {
+  if (ui.gifLoopToggle) ui.gifLoopToggle.checked = state.gifLoop;
+  if (ui.audioLoopToggle) ui.audioLoopToggle.checked = state.audioLoop;
+  if (ui.sceneAudioName) {
+    ui.sceneAudioName.textContent = state.sceneAudioAsset?.name || "未设置音频";
+    ui.sceneAudioName.classList.toggle("empty", !state.sceneAudioAsset);
+  }
+}
+
+function normalizeSceneAudioAsset(asset) {
+  if (typeof asset === "string") {
+    return {
+      key: asset,
+      name: decodeURIComponent(asset.split("/").pop() || "scene-audio"),
+      url: asset,
+      type: inferAssetType(asset),
+      size: 0,
+    };
+  }
+  if (!asset || typeof asset !== "object") return null;
+  const url = asset.url || asset.assetUrl || "";
+  if (!url) return null;
+  return {
+    key: asset.key || asset.assetKey || url,
+    name: asset.name || decodeURIComponent(url.split("/").pop() || "scene-audio"),
+    url,
+    type: asset.type || asset.assetType || inferAssetType(url),
+    size: Number(asset.size || 0),
+  };
+}
+
+function restartScenePlayback({ autoplay = false } = {}) {
+  state.scenePlaybackToken += 1;
+  state.sceneEnded = false;
+  resetGifPlayback();
+  setupSceneAudio({ autoplay, restart: true });
+}
+
+function scenePlaybackUrl(url) {
+  if (!url || /^(data|blob):/i.test(url)) return url;
+  try {
+    const next = new URL(url, window.location.href);
+    next.searchParams.set("__scenePlay", String(state.scenePlaybackToken));
+    return next.href;
+  } catch {
+    return url;
+  }
+}
+
+function setupSceneAudio({ autoplay = false, restart = false } = {}) {
+  syncSceneMediaControls();
+  if (!ui.sceneAudio) return;
+  ui.sceneAudio.loop = state.audioLoop;
+  ui.sceneAudio.preload = "auto";
+  if (!state.sceneAudioAsset || !isAudioAsset(state.sceneAudioAsset)) {
+    ui.sceneAudio.pause();
+    ui.sceneAudio.removeAttribute("src");
+    ui.sceneAudio.load?.();
+    return;
+  }
+  const nextSrc = new URL(state.sceneAudioAsset.url, window.location.href).href;
+  if (ui.sceneAudio.src !== nextSrc) {
+    ui.sceneAudio.pause();
+    ui.sceneAudio.src = state.sceneAudioAsset.url;
+  }
+  if (restart) {
+    try {
+      ui.sceneAudio.currentTime = 0;
+    } catch {}
+  }
+  if (autoplay && !state.paused) playSceneAudio({ restart });
+}
+
+function playSceneAudio({ restart = false } = {}) {
+  if (!ui.sceneAudio || !state.sceneAudioAsset || state.paused) return;
+  if (restart) {
+    try {
+      ui.sceneAudio.currentTime = 0;
+    } catch {}
+  }
+  ui.sceneAudio.loop = state.audioLoop;
+  ui.sceneAudio.play?.().catch(() => {});
+}
+
+function hasFiniteScenePlayback() {
+  const hasFiniteAudio = Boolean(state.sceneAudioAsset && !state.audioLoop);
+  const hasFiniteGif = !state.gifLoop && state.items.some((item) => item.mediaType === "gif");
+  return hasFiniteAudio || hasFiniteGif;
+}
+
+function isScenePlaybackFinished() {
+  if (!hasFiniteScenePlayback()) return false;
+  const audioDone =
+    !state.sceneAudioAsset || state.audioLoop || !ui.sceneAudio || ui.sceneAudio.ended || ui.sceneAudio.duration === 0;
+  const gifDone =
+    state.gifLoop ||
+    state.items
+      .filter((item) => item.mediaType === "gif")
+      .every((item) => state.gifPlayers.get(item.id)?.ended === true || !("ImageDecoder" in window));
+  return audioDone && gifDone;
+}
+
+async function handleSceneMediaEnded() {
+  if (!(isViewer || isFinal) || state.sceneEnded || !isScenePlaybackFinished()) return;
+  state.sceneEnded = true;
+  if (state.sceneFlow.mode === "auto" && state.sceneFlow.nextSceneId) {
+    setLayoutStatus(`场景结束，正在进入：${getSceneLabel(state.sceneFlow.nextSceneId)}`);
+    await switchScene(state.sceneFlow.nextSceneId);
+    return;
+  }
+  if (state.sceneFlow.mode === "dialog") {
+    setLayoutStatus("场景结束，等待玩家对话触发下一场景", "warn");
+    setVoiceStatus("请说出选择，系统会按关键词进入下一场景。", "listening");
+  }
+}
+
+function getSceneLabel(sceneId) {
+  const scene = state.scenes.find((item) => item.id === sceneId);
+  return scene?.name || sceneId;
+}
+
+function matchSceneFlowRoute(text) {
+  const normalized = normalizeKeywordText(text);
+  return state.sceneFlow.routes.find((route) => {
+    if (!route.sceneId || !route.keywords) return false;
+    return route.keywords
+      .split(/[,\s，、|/]+/)
+      .map((keyword) => normalizeKeywordText(keyword))
+      .filter(Boolean)
+      .some((keyword) => normalized.includes(keyword));
+  });
+}
+
+function normalizeKeywordText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
+async function triggerSceneFlowKeywordSwitch(text) {
+  if (state.sceneFlow.mode !== "dialog") return "";
+  if (!state.sceneEnded && hasFiniteScenePlayback()) return "";
+  const route = matchSceneFlowRoute(text);
+  if (!route?.sceneId || route.sceneId === state.currentSceneId) return "";
+  await switchScene(route.sceneId);
+  return route.sceneId;
+}
+
 async function switchScene(sceneId) {
-  if (!sceneId || sceneId === state.currentSceneId) return;
+  if (!sceneId) return;
+  if (sceneId === state.currentSceneId) {
+    if (isViewer || isFinal) restartScenePlayback({ autoplay: true });
+    return;
+  }
+  if (isFinal) {
+    await switchFinalScene(sceneId);
+    return;
+  }
   setLayoutStatus("正在切换场景");
   const loaded = await loadSceneById(sceneId);
   if (loaded || isViewer) updateSceneUrl();
@@ -666,6 +1023,45 @@ function updateSceneUrl() {
   const url = new URL(window.location.href);
   url.searchParams.set("scene", state.currentSceneId);
   window.history.replaceState({}, "", url);
+}
+
+async function switchFinalScene(sceneId) {
+  const token = (state.transitionToken += 1);
+  const ghost = createSceneGhost();
+  document.querySelector(".final-stage")?.classList.add("scene-is-loading");
+  setLayoutStatus("正在切换场景");
+  await loadSceneById(sceneId);
+  if (token !== state.transitionToken) {
+    ghost?.remove();
+    return;
+  }
+  updateSceneUrl();
+  requestAnimationFrame(() => {
+    document.querySelector(".final-stage")?.classList.remove("scene-is-loading");
+    ghost?.classList.add("fading");
+    window.setTimeout(() => ghost?.remove(), 880);
+  });
+}
+
+function createSceneGhost() {
+  if (!isFinal || !canvas.parentElement) return null;
+  const ghost = document.createElement("div");
+  ghost.className = "scene-ghost";
+
+  const backdrop = document.createElement("img");
+  backdrop.className = "scene-ghost-backdrop";
+  backdrop.alt = "";
+  backdrop.src = canvas.toDataURL("image/png");
+  ghost.append(backdrop);
+
+  state.gifElements.forEach((element) => {
+    const clone = element.cloneNode(true);
+    clone.classList.remove("paused");
+    ghost.append(clone);
+  });
+
+  canvas.parentElement.append(ghost);
+  return ghost;
 }
 
 async function restoreLayoutItems(items) {
@@ -708,8 +1104,21 @@ function clearSceneMedia() {
   });
   state.gifElements.forEach((element) => element.remove());
   state.gifElements.clear();
+  state.gifPlayers.forEach((player) => releaseGifPlayer(player));
+  state.gifPlayers.clear();
+  state.gifPauseFrames.forEach((frame) => frame.remove());
+  state.gifPauseFrames.clear();
   state.items = [];
   state.selectedId = null;
+}
+
+function resetGifPlayback() {
+  state.gifElements.forEach((element) => element.remove());
+  state.gifElements.clear();
+  state.gifPlayers.forEach((player) => releaseGifPlayer(player));
+  state.gifPlayers.clear();
+  state.gifPauseFrames.forEach((frame) => frame.remove());
+  state.gifPauseFrames.clear();
 }
 
 function applyLayoutRecord(item, record) {
@@ -729,11 +1138,20 @@ function applyLayoutRecord(item, record) {
 function serializeLayout() {
   return {
     id: state.currentSceneId,
-    name: ui.sceneNameInput?.value?.trim() || state.currentSceneName,
+    name:
+      state.currentSceneId === "default"
+        ? "默认场景"
+        : ui.sceneNameInput?.value?.trim() || state.currentSceneName,
     scene: {
       focal: state.focal,
       parallax: state.parallax,
       showGrid: state.showGrid,
+      audioAsset: state.sceneAudioAsset,
+      audioLoop: state.audioLoop,
+      gifLoop: state.gifLoop,
+      flow: state.sceneFlow,
+      xfyunVoice: state.xfyunVoice,
+      ageRequired: state.ageRequired,
     },
     items: state.items
       .filter((item) => item.assetUrl || item.src)
@@ -764,7 +1182,10 @@ function scheduleSaveLayout() {
 async function saveLayoutNow() {
   if (isViewer) return;
   try {
-    const sceneName = ui.sceneNameInput?.value?.trim() || state.currentSceneName;
+    const sceneName =
+      state.currentSceneId === "default"
+        ? "默认场景"
+        : ui.sceneNameInput?.value?.trim() || state.currentSceneName;
     const response = await fetch("/api/layout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -816,6 +1237,11 @@ function inferAssetType(url = "") {
   if (/\.mov$/i.test(url)) return "video/quicktime";
   if (/\.webm$/i.test(url)) return "video/webm";
   if (/\.mp4$/i.test(url)) return "video/mp4";
+  if (/\.mp3$/i.test(url)) return "audio/mpeg";
+  if (/\.wav$/i.test(url)) return "audio/wav";
+  if (/\.ogg$/i.test(url)) return "audio/ogg";
+  if (/\.m4a$/i.test(url)) return "audio/mp4";
+  if (/\.aac$/i.test(url)) return "audio/aac";
   return "application/octet-stream";
 }
 
@@ -1022,15 +1448,7 @@ function updateGifOverlays() {
   sorted.forEach((item, index) => {
     if (item.mediaType !== "gif") return;
     visibleGifIds.add(item.id);
-    let element = state.gifElements.get(item.id);
-    if (!element) {
-      element = document.createElement("img");
-      element.className = "gif-layer";
-      element.alt = "";
-      element.src = item.assetUrl || item.src;
-      ui.mediaOverlay.append(element);
-      state.gifElements.set(item.id, element);
-    }
+    const element = ensureGifOverlayElement(item);
 
     const projection = project(item);
     const width = getMediaWidth(item.media) * item.scale * projection.scale;
@@ -1045,12 +1463,217 @@ function updateGifOverlays() {
     element.style.opacity = String(item.alpha);
     element.style.outline =
       item.id === state.selectedId && !isViewer ? "2px dashed rgba(139,215,197,0.9)" : "0";
+    element.classList.toggle("paused", state.paused);
+    syncGifPauseFrame(item.id, element);
+    if (element.tagName === "CANVAS") advanceGifPlayer(item.id);
   });
 
   for (const [id, element] of state.gifElements) {
     if (visibleGifIds.has(id)) continue;
     element.remove();
     state.gifElements.delete(id);
+    state.gifPauseFrames.get(id)?.remove();
+    state.gifPauseFrames.delete(id);
+    releaseGifPlayer(state.gifPlayers.get(id));
+    state.gifPlayers.delete(id);
+  }
+}
+
+function ensureGifOverlayElement(item) {
+  const shouldUseCanvas = !state.gifLoop && "ImageDecoder" in window;
+  let element = state.gifElements.get(item.id);
+  const needsReplacement =
+    !element || (shouldUseCanvas && element.tagName !== "CANVAS") || (!shouldUseCanvas && element.tagName !== "IMG");
+
+  if (needsReplacement) {
+    element?.remove();
+    state.gifPauseFrames.get(item.id)?.remove();
+    state.gifPauseFrames.delete(item.id);
+    releaseGifPlayer(state.gifPlayers.get(item.id));
+    state.gifPlayers.delete(item.id);
+
+    element = document.createElement(shouldUseCanvas ? "canvas" : "img");
+    element.className = "gif-layer";
+    element.alt = "";
+    if (!shouldUseCanvas) element.src = scenePlaybackUrl(item.assetUrl || item.src);
+    ui.mediaOverlay.append(element);
+    state.gifElements.set(item.id, element);
+
+    if (shouldUseCanvas) {
+      const player = {
+        canvas: element,
+        context: element.getContext("2d"),
+        frames: [],
+        index: 0,
+        lastAt: performance.now(),
+        ended: false,
+        decoding: true,
+        cancelled: false,
+        source: scenePlaybackUrl(item.assetUrl || item.src),
+      };
+      state.gifPlayers.set(item.id, player);
+      decodeGifFrames(player);
+    }
+  }
+
+  return element;
+}
+
+async function decodeGifFrames(player) {
+  try {
+    const response = await fetch(player.source);
+    const bytes = await response.arrayBuffer();
+    const decoder = new ImageDecoder({ data: bytes, type: "image/gif" });
+    await decoder.tracks.ready;
+    const frameCount = decoder.tracks.selectedTrack?.frameCount || 1;
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      if (player.cancelled) break;
+      const { image } = await decoder.decode({ frameIndex });
+      const bitmap = await createImageBitmap(image);
+      const duration = normalizeGifFrameDuration(image.duration);
+      image.close?.();
+      if (player.cancelled) bitmap.close?.();
+      else player.frames.push({ bitmap, duration });
+    }
+    player.decoding = false;
+    if (!player.cancelled) drawGifPlayerFrame(player);
+  } catch {
+    player.decoding = false;
+  }
+}
+
+function normalizeGifFrameDuration(duration) {
+  const fallback = 100;
+  if (!Number.isFinite(duration) || duration <= 0) return fallback;
+  return duration > 1000 ? Math.max(20, duration / 1000) : Math.max(20, duration);
+}
+
+function advanceGifPlayer(id) {
+  const player = state.gifPlayers.get(id);
+  if (!player || !player.frames.length) return;
+  if (state.paused || player.ended) {
+    drawGifPlayerFrame(player);
+    return;
+  }
+
+  const now = performance.now();
+  const current = player.frames[player.index];
+  if (now - player.lastAt >= current.duration) {
+    player.lastAt = now;
+    if (player.index >= player.frames.length - 1) {
+      if (state.gifLoop) {
+        player.index = 0;
+      } else {
+        player.index = player.frames.length - 1;
+        player.ended = true;
+        handleSceneMediaEnded();
+      }
+    } else {
+      player.index += 1;
+    }
+  }
+  drawGifPlayerFrame(player);
+}
+
+function drawGifPlayerFrame(player) {
+  const frame = player.frames[player.index];
+  if (!frame || !player.context) return;
+  const width = frame.bitmap.width || 1;
+  const height = frame.bitmap.height || 1;
+  if (player.canvas.width !== width || player.canvas.height !== height) {
+    player.canvas.width = width;
+    player.canvas.height = height;
+  }
+  player.context.clearRect(0, 0, width, height);
+  player.context.drawImage(frame.bitmap, 0, 0, width, height);
+}
+
+function releaseGifPlayer(player) {
+  if (!player) return;
+  player.cancelled = true;
+  player.frames.forEach((frame) => frame.bitmap?.close?.());
+  player.frames = [];
+}
+
+function syncGifPauseFrame(id, element) {
+  let frame = state.gifPauseFrames.get(id);
+  if (!state.paused) {
+    frame?.remove();
+    state.gifPauseFrames.delete(id);
+    resumeGifElement(element);
+    return;
+  }
+
+  if (!frame) {
+    frame = document.createElement("canvas");
+    frame.className = "gif-pause-frame";
+    ui.mediaOverlay.append(frame);
+    state.gifPauseFrames.set(id, frame);
+    captureGifFrame(element, frame);
+    pauseGifElement(element);
+  }
+
+  frame.style.width = element.style.width;
+  frame.style.height = element.style.height;
+  frame.style.transform = element.style.transform;
+  frame.style.zIndex = element.style.zIndex;
+  frame.style.opacity = element.style.opacity;
+}
+
+function captureGifFrame(element, frame) {
+  const width = Math.max(1, element.naturalWidth || element.clientWidth || 1);
+  const height = Math.max(1, element.naturalHeight || element.clientHeight || 1);
+  frame.width = width;
+  frame.height = height;
+  const frameContext = frame.getContext("2d");
+  frameContext.clearRect(0, 0, width, height);
+  try {
+    frameContext.drawImage(element, 0, 0, width, height);
+  } catch {}
+}
+
+function pauseGifElement(element) {
+  if (!element.src) return;
+  element.dataset.playSrc = element.currentSrc || element.src;
+  element.removeAttribute("src");
+}
+
+function resumeGifElement(element) {
+  const src = element.dataset.playSrc;
+  if (!src || element.src) return;
+  element.src = src;
+}
+
+function togglePlayback() {
+  state.paused = !state.paused;
+  ui.playPauseButton?.classList.toggle("paused", state.paused);
+  ui.playPauseButton?.classList.toggle("playing", !state.paused);
+  ui.playPauseButton?.setAttribute("aria-label", state.paused ? "播放画面" : "暂停画面");
+  if (!state.paused) {
+    state.gifPauseFrames.forEach((frame) => frame.remove());
+    state.gifPauseFrames.clear();
+    state.gifElements.forEach((element) => resumeGifElement(element));
+  } else {
+    state.gifElements.forEach((element, id) => {
+      let frame = state.gifPauseFrames.get(id);
+      if (!frame) {
+        frame = document.createElement("canvas");
+        frame.className = "gif-pause-frame";
+        ui.mediaOverlay.append(frame);
+        state.gifPauseFrames.set(id, frame);
+      }
+      captureGifFrame(element, frame);
+      pauseGifElement(element);
+    });
+  }
+  state.items.forEach((item) => {
+    if (item.mediaType !== "video") return;
+    if (state.paused) item.media.pause?.();
+    else item.media.play?.().catch(() => {});
+  });
+  if (ui.sceneAudio) {
+    if (state.paused) ui.sceneAudio.pause();
+    else playSceneAudio();
   }
 }
 
@@ -1849,6 +2472,40 @@ function finalizeVoiceListening() {
 
 async function handleAudienceSpeech(text) {
   if (state.voice.busy) return;
+  if (isFinal) {
+    state.voice.busy = true;
+    state.voice.listening = false;
+    ui.voiceButton.classList.remove("active");
+    ui.voiceButton.textContent = "生成中";
+    setVoiceStatus("正在生成回应", "thinking");
+    ui.voiceTranscript.textContent = text;
+    let switched = "";
+    try {
+      switched = await triggerSceneFlowKeywordSwitch(text);
+      if (!switched) switched = await triggerKeywordSceneSwitch(text);
+      const cue = await getDirectorCue(text);
+      await applyCueFlow(cue);
+      const reply = cue.reply || makeFinalReply(text, switched);
+      ui.voiceReply.textContent = reply;
+      updateCaption(reply);
+      speakReply(reply);
+      state.voice.conversation.push({ role: "user", content: text }, { role: "assistant", content: reply });
+      state.voice.conversation = state.voice.conversation.slice(-10);
+      if (cue.nextBeat && scriptBeats[cue.nextBeat]) ui.scriptBeatSelect.value = cue.nextBeat;
+      setVoiceStatus(switched ? "场景已切换，回应已生成" : "回应已生成");
+    } catch (error) {
+      const reply = makeFinalReply(text, switched);
+      ui.voiceReply.textContent = reply;
+      updateCaption(reply);
+      speakReply(reply);
+      setVoiceStatus(error.message || "Kimi 暂不可用，已使用本地回应", "error");
+    } finally {
+      state.voice.busy = false;
+      ui.voiceButton.textContent = "语音";
+      if (ui.voiceTextInput) ui.voiceTextInput.value = "";
+    }
+    return;
+  }
   state.voice.busy = true;
   state.voice.listening = false;
   ui.voiceButton.classList.remove("active");
@@ -1857,6 +2514,7 @@ async function handleAudienceSpeech(text) {
 
   try {
     const cue = await getDirectorCue(text);
+    await applyCueFlow(cue);
     applyDirectorCue(cue);
     const reply = cue.reply || "我听见了。画面会跟着你的选择继续向前。";
     ui.voiceReply.textContent = reply;
@@ -1879,7 +2537,13 @@ async function handleAudienceSpeech(text) {
   }
 }
 
-async function getDirectorCue(text) {
+async function getDirectorCue(text, overrides = {}) {
+  const scenePayload = {
+    id: state.currentSceneId,
+    ageRequired: state.ageRequired,
+    nextSceneId: state.sceneFlow.nextSceneId,
+    ...(overrides.scene || {}),
+  };
   const response = await fetch(state.voice.directorEndpoint, {
     method: "POST",
     headers: {
@@ -1889,6 +2553,8 @@ async function getDirectorCue(text) {
       text,
       beatKey: ui.scriptBeatSelect.value,
       conversation: state.voice.conversation.slice(-6),
+      scene: scenePayload,
+      variables: overrides.variables || state.userVariables,
     }),
   });
 
@@ -1903,6 +2569,91 @@ async function getDirectorCue(text) {
   if (payload.cue) return payload.cue;
   const content = payload.choices?.[0]?.message?.content ?? "";
   return parseDirectorCue(content) ?? makeLocalDirectorCue(text);
+}
+
+async function applyCueFlow(cue) {
+  const flow = cue?.flow;
+  if (!flow || typeof flow !== "object") return;
+
+  if (flow.variables && typeof flow.variables === "object") {
+    state.userVariables = { ...state.userVariables, ...flow.variables };
+  }
+
+  if (flow.user_age !== undefined) {
+    const age = Number(flow.user_age);
+    if (Number.isFinite(age)) state.userVariables.user_age = age;
+  }
+
+  if (flow.ageRequired && flow.feedbackSceneId) {
+    state.pendingAgeFlow = {
+      feedbackSceneId: flow.feedbackSceneId,
+      sourceSceneId: flow.sourceSceneId || state.currentSceneId,
+      successNextSceneId: flow.successNextSceneId || "",
+      ageExtracted: Boolean(flow.ageExtracted),
+      user_age: flow.user_age ?? state.userVariables.user_age ?? null,
+      handled: false,
+    };
+    await switchScene(flow.feedbackSceneId);
+    return;
+  }
+
+  if (flow.ageExtracted && flow.nextSceneId) {
+    await switchScene(flow.nextSceneId);
+  }
+}
+
+function maybeRunPendingAgeFeedback() {
+  const flow = state.pendingAgeFlow;
+  if (!flow || flow.handled || flow.feedbackSceneId !== state.currentSceneId) return;
+  flow.handled = true;
+  runPendingAgeFeedback(flow).catch((error) => {
+    setVoiceStatus(error.message || "年龄反馈流程失败", "error");
+  });
+}
+
+async function runPendingAgeFeedback(flow) {
+  const prompt = flow.ageExtracted
+    ? `年龄已获取：${flow.user_age}岁。请直接回应并复述年龄。`
+    : "年龄没有获取到。请直接要求用户必须告诉年龄。";
+  const cue = await getDirectorCue(prompt, {
+    scene: {
+      id: state.currentSceneId,
+      ageFeedback: true,
+      ageExtracted: flow.ageExtracted,
+      user_age: flow.user_age,
+      sourceSceneId: flow.sourceSceneId,
+      successNextSceneId: flow.successNextSceneId,
+    },
+    variables: state.userVariables,
+  });
+  const reply = cue.reply || (flow.ageExtracted ? `那看来你没傻。${flow.user_age}岁，记住了。` : "不行，你必须告诉我年龄。");
+  ui.voiceReply.textContent = reply;
+  updateCaption(reply);
+  const ttsPromise = speakReply(reply);
+  state.voice.conversation.push({ role: "user", content: prompt }, { role: "assistant", content: reply });
+  state.voice.conversation = state.voice.conversation.slice(-10);
+  await Promise.all([ttsPromise, waitForScenePlaybackComplete()]);
+
+  const nextSceneId = flow.ageExtracted
+    ? flow.successNextSceneId || state.sceneFlow.nextSceneId
+    : flow.sourceSceneId;
+  state.pendingAgeFlow = null;
+  if (nextSceneId) await switchScene(nextSceneId);
+}
+
+function waitForScenePlaybackComplete() {
+  if (!hasFiniteScenePlayback() || isScenePlaybackFinished()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const check = () => {
+      if (isScenePlaybackFinished() || Date.now() - startedAt > 45000) {
+        resolve();
+        return;
+      }
+      setTimeout(check, 180);
+    };
+    check();
+  });
 }
 
 function renderKimiDebug(debug) {
@@ -1935,6 +2686,23 @@ function parseDirectorCue(content) {
   } catch {
     return null;
   }
+}
+
+async function triggerKeywordSceneSwitch(text) {
+  const normalized = String(text || "").trim();
+  const targetAlias = /火/.test(normalized) ? "scene2" : /水/.test(normalized) ? "scene3" : "";
+  if (!targetAlias) return "";
+  const sceneId = resolveSceneAlias(targetAlias);
+  if (!sceneId || sceneId === state.currentSceneId) return "";
+  await switchScene(sceneId);
+  return targetAlias;
+}
+
+function makeFinalReply(text, switched) {
+  if (switched === "scene2") return "火。可以，但动作要快。";
+  if (switched === "scene3") return "水更重要。先确认能不能喝。";
+  if (switched) return `已进入：${getSceneLabel(switched)}`;
+  return text ? "我听见了。继续说重点。" : "先说你的选择。";
 }
 
 function makeLocalDirectorCue(text) {
@@ -2024,14 +2792,50 @@ function updateCaption(text) {
   ui.stageSubtitle.classList.toggle("visible", Boolean(text));
 }
 
+function normalizeXfyunVoice(value) {
+  const allowed = new Set([
+    "x6_lingfeiyi_pro",
+    "x6_lingxiaoxuan_pro",
+    "x6_lingyuyan_pro",
+    "x6_lingbosong_pro",
+  ]);
+  return allowed.has(value) ? value : "x6_lingfeiyi_pro";
+}
+
 function speakReply(text) {
-  if (!("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "zh-CN";
-  utterance.rate = 0.95;
-  utterance.pitch = 1;
-  window.speechSynthesis.speak(utterance);
+  const promise = playXfyunTts(text).catch((error) => {
+    setVoiceStatus(`讯飞语音合成失败：${error.message}`, "error");
+  });
+  state.activeTts = promise;
+  return promise;
+}
+
+async function playXfyunTts(text) {
+  if (!text) return;
+  setVoiceStatus("正在用讯飞聆飞逸合成语音", "thinking");
+  const response = await fetch("/api/tts", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text, voice: state.xfyunVoice }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || payload.error || response.statusText);
+  }
+
+  const blob = await response.blob();
+  const audioUrl = URL.createObjectURL(blob);
+  const audio = new Audio(audioUrl);
+  audio.addEventListener("ended", () => URL.revokeObjectURL(audioUrl), { once: true });
+  audio.addEventListener("error", () => URL.revokeObjectURL(audioUrl), { once: true });
+  await audio.play();
+  await new Promise((resolve) => {
+    audio.addEventListener("ended", resolve, { once: true });
+    audio.addEventListener("error", resolve, { once: true });
+  });
 }
 
 function getCurrentBeat() {

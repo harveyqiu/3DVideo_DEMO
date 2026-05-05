@@ -3,31 +3,61 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>三维演示页</title>
+    <title>最终产品展示页</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body data-mode="viewer" class="viewer-page">
-    <div id="app" class="viewer-app">
-      <main class="stage-wrap viewer-stage">
-        <canvas id="stage" aria-label="三维演示画布"></canvas>
+  <body data-mode="final" class="final-page">
+    <div id="app" class="final-app">
+      <main class="stage-wrap final-stage">
+        <canvas id="stage" aria-label="产品展示画面"></canvas>
         <div id="mediaOverlay" class="media-overlay" aria-hidden="true"></div>
         <audio id="sceneAudio" preload="auto"></audio>
+        <div id="stageSubtitle" class="stage-subtitle final-subtitle" aria-live="polite"></div>
 
-        <div class="viewer-toolbar">
-          <label>
-            <span>演示场景</span>
-            <select id="sceneSelect">
-              <option value="default">默认场景</option>
-            </select>
-          </label>
-          <button id="viewerStartButton" type="button">开启视线追踪</button>
-          <span id="layoutStatus">正在读取场景</span>
+        <section class="final-camera-module" aria-label="摄像头模块">
+          <div class="final-camera-head">
+            <button id="cameraButton" type="button">开启摄像头</button>
+            <span id="cameraDiagnostics">摄像头未开启</span>
+          </div>
+          <video id="cameraPreview" autoplay playsinline muted></video>
+          <select id="cameraSelect" aria-label="选择摄像头">
+            <option value="">默认摄像头</option>
+          </select>
+          <strong id="trackingState">未连接摄像头</strong>
+          <span id="trackingMeta">等待视觉输入</span>
+        </section>
+
+        <div class="final-control-dock">
+          <button
+            id="playPauseButton"
+            class="play-pause-button playing"
+            type="button"
+            aria-label="暂停画面"
+            title="播放 / 暂停"
+          >
+            <span class="pause-icon" aria-hidden="true"></span>
+            <span class="play-icon" aria-hidden="true"></span>
+          </button>
+
+          <section class="final-interaction" aria-label="互动输入">
+            <div class="final-input-row">
+              <button id="voiceButton" class="voice-round-button" type="button">语音</button>
+              <textarea
+                id="voiceTextInput"
+                rows="2"
+                placeholder="说出或输入你的选择，例如：我想找火。"
+              ></textarea>
+              <button id="voiceTextSendButton" type="button">发送</button>
+            </div>
+            <span id="voiceStatus">等待输入。提到“火”进入场景2，提到“水”进入场景3。</span>
+            <p id="voiceTranscript"></p>
+            <p id="voiceReply"></p>
+          </section>
         </div>
       </main>
 
       <div class="hidden-controls" aria-hidden="true">
         <input id="fileInput" type="file" />
-        <button id="cameraButton" type="button"></button>
         <button id="autoLayoutButton" type="button"></button>
         <button id="saveLayoutButton" type="button"></button>
         <button id="saveAsLayoutButton" type="button"></button>
@@ -35,7 +65,6 @@
         <span id="sceneAudioName"></span>
         <input id="gifLoopToggle" type="checkbox" checked />
         <input id="audioLoopToggle" type="checkbox" checked />
-        <input id="ageRequiredToggle" type="checkbox" />
         <select id="sceneEndMode">
           <option value="none">none</option>
           <option value="auto">auto</option>
@@ -46,25 +75,17 @@
           <input data-flow-keywords type="text" />
           <select data-flow-scene><option value="">none</option></select>
         </div>
+        <select id="sceneSelect"><option value="default">默认场景</option></select>
         <input id="sceneNameInput" type="text" value="默认场景" />
-        <select id="xfyunVoiceSelect">
-          <option value="x6_lingfeiyi_pro">聆飞逸 x6_lingfeiyi_pro</option>
-          <option value="x6_lingxiaoxuan_pro">聆小璇 x6_lingxiaoxuan_pro</option>
-          <option value="x6_lingyuyan_pro">聆玉言 x6_lingyuyan_pro</option>
-          <option value="x6_lingbosong_pro">聆伯松 x6_lingbosong_pro</option>
-        </select>
         <button id="exportButton" type="button"></button>
         <button id="deleteButton" type="button"></button>
         <div id="layerList"></div>
-        <video id="cameraPreview" autoplay playsinline muted></video>
-        <select id="cameraSelect"><option value="">默认摄像头</option></select>
-        <span id="cameraDiagnostics"></span>
-        <strong id="trackingState"></strong>
-        <span id="trackingMeta"></span>
-        <button id="voiceButton" type="button"></button>
-        <span id="voiceStatus"></span>
-        <p id="voiceTranscript"></p>
-        <p id="voiceReply"></p>
+        <button id="micLevelButton" type="button"></button>
+        <span id="micLevelStatus"></span>
+        <span id="micLevelBar"></span>
+        <pre id="kimiRequestDebug"></pre>
+        <pre id="kimiResponseDebug"></pre>
+        <p id="voiceCaptionPreview"></p>
         <select id="scriptBeatSelect"><option value="opening">opening</option></select>
         <input id="focalRange" type="range" min="0" max="100" value="50" />
         <input id="parallaxRange" type="range" min="0" max="100" value="51" />
@@ -83,6 +104,7 @@
         <span id="scaleValue"></span>
         <span id="rotationValue"></span>
         <span id="tiltValue"></span>
+        <span id="layoutStatus"></span>
       </div>
     </div>
 
