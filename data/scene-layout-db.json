@@ -352,6 +352,7 @@
           },
           "audioLoop": false,
           "gifLoop": false,
+          "webmLoop": false,
           "flow": {
             "mode": "dialog",
             "nextSceneId": "default",
@@ -400,7 +401,10 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T11:17:32.406Z"
+      "updatedAt": "2026-05-06T11:35:27.456Z"
     }
+  },
+  "settings": {
+    "finalStartSceneId": "t2-motyjdhn"
   }
 }

@@ -80,6 +80,11 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname === "/api/settings") {
+      await handleSettings(request, response);
+      return;
+    }
+
     if (url.pathname === "/api/assets") {
       await handleAssets(request, response, url);
       return;
@@ -121,6 +126,26 @@ async function handleLayout(request, response, url) {
     const name = id === "default" ? "默认场景" : sanitizeSceneName(body.name || body.sceneName || id);
     writeLayoutPayload(id, name, body);
     sendJson(response, 200, { ok: true, id, name, savedAt: new Date().toISOString() });
+    return;
+  }
+
+  sendJson(response, 405, { error: "method_not_allowed" });
+}
+
+async function handleSettings(request, response) {
+  ensureDatabase();
+
+  if (request.method === "GET") {
+    sendJson(response, 200, { settings: readSettings() });
+    return;
+  }
+
+  if (request.method === "POST") {
+    const body = await readJsonBody(request, 32 * 1024);
+    const settings = writeSettings({
+      finalStartSceneId: sanitizeSceneId(body.finalStartSceneId || "default"),
+    });
+    sendJson(response, 200, { ok: true, settings });
     return;
   }
 
@@ -452,6 +477,25 @@ function writeLayoutPayload(id, name, payload) {
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8");
 }
 
+function readSettings() {
+  const db = readDatabase();
+  return normalizeSettings(db.settings, db.layouts);
+}
+
+function writeSettings(nextSettings) {
+  const db = readDatabase();
+  db.settings = normalizeSettings({ ...db.settings, ...nextSettings }, db.layouts);
+  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8");
+  return db.settings;
+}
+
+function normalizeSettings(settings = {}, layouts = {}) {
+  const finalStartSceneId = sanitizeSceneId(settings.finalStartSceneId || "default");
+  return {
+    finalStartSceneId: layouts[finalStartSceneId] ? finalStartSceneId : "default",
+  };
+}
+
 function sanitizeSceneId(value) {
   return String(value || "default")
     .trim()
@@ -477,6 +521,9 @@ function readDatabase() {
 function normalizeDatabase(db) {
   db.layouts = db.layouts || {};
   let changed = false;
+  const normalizedSettings = normalizeSettings(db.settings, db.layouts);
+  if (JSON.stringify(db.settings || {}) !== JSON.stringify(normalizedSettings)) changed = true;
+  db.settings = normalizedSettings;
 
   for (const [id, entry] of Object.entries({ ...db.layouts })) {
     const rawPayload =

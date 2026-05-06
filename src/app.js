@@ -12,6 +12,7 @@ const ui = {
   saveAsLayoutButton: document.querySelector("#saveAsLayoutButton"),
   sceneSelect: document.querySelector("#sceneSelect"),
   sceneNameInput: document.querySelector("#sceneNameInput"),
+  finalStartSceneSelect: document.querySelector("#finalStartSceneSelect"),
   xfyunVoiceSelect: document.querySelector("#xfyunVoiceSelect"),
   sceneAudioInput: document.querySelector("#sceneAudioInput"),
   sceneAudioName: document.querySelector("#sceneAudioName"),
@@ -93,6 +94,7 @@ const state = {
   layoutSaveTimer: null,
   currentSceneId: new URLSearchParams(window.location.search).get("scene") || "default",
   currentSceneName: "默认场景",
+  finalStartSceneId: "default",
   scenes: [],
   loadingScene: true,
   sceneAudioAsset: null,
@@ -236,6 +238,10 @@ function bindEvents() {
   ui.saveLayoutButton?.addEventListener("click", () => saveLayoutNow());
   ui.saveAsLayoutButton?.addEventListener("click", () => saveAsLayout());
   ui.sceneSelect?.addEventListener("change", () => switchScene(ui.sceneSelect.value));
+  ui.finalStartSceneSelect?.addEventListener("change", async () => {
+    state.finalStartSceneId = ui.finalStartSceneSelect.value || "default";
+    await saveAppSettings();
+  });
   ui.xfyunVoiceSelect?.addEventListener("change", () => {
     state.xfyunVoice = normalizeXfyunVoice(ui.xfyunVoiceSelect.value);
     ui.xfyunVoiceSelect.value = state.xfyunVoice;
@@ -701,8 +707,9 @@ async function loadInitialScene() {
   setLayoutStatus("正在读取布局");
   try {
     await loadSceneList();
+    await loadAppSettings();
     if (isFinal && !new URLSearchParams(window.location.search).has("scene")) {
-      state.currentSceneId = resolveSceneAlias("scene1") || state.currentSceneId;
+      state.currentSceneId = state.finalStartSceneId || state.currentSceneId;
     }
     syncSceneControls();
     const loaded = await loadSceneById(state.currentSceneId);
@@ -787,6 +794,35 @@ async function loadSceneList() {
   renderSceneOptions();
 }
 
+async function loadAppSettings() {
+  try {
+    const response = await fetch("/api/settings");
+    if (!response.ok) return;
+    const payload = await response.json();
+    const sceneId = payload.settings?.finalStartSceneId || "default";
+    state.finalStartSceneId = hasScene(sceneId) ? sceneId : "default";
+    renderFinalStartSceneOptions();
+  } catch {}
+}
+
+async function saveAppSettings() {
+  try {
+    const response = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ finalStartSceneId: state.finalStartSceneId }),
+    });
+    if (!response.ok) throw new Error("settings save failed");
+    setLayoutStatus(`Final 首场景已设置为：${getSceneLabel(state.finalStartSceneId)}`, "good");
+  } catch {
+    setLayoutStatus("Final 首场景设置保存失败", "warn");
+  }
+}
+
+function hasScene(sceneId) {
+  return state.scenes.some((scene) => scene.id === sceneId);
+}
+
 function renderSceneOptions() {
   if (!ui.sceneSelect) return;
   ui.sceneSelect.innerHTML = "";
@@ -797,7 +833,21 @@ function renderSceneOptions() {
     ui.sceneSelect.append(option);
   });
   ui.sceneSelect.value = state.currentSceneId;
+  renderFinalStartSceneOptions();
   renderSceneFlowOptions();
+}
+
+function renderFinalStartSceneOptions() {
+  if (!ui.finalStartSceneSelect) return;
+  const selected = state.finalStartSceneId || ui.finalStartSceneSelect.value || "default";
+  ui.finalStartSceneSelect.innerHTML = "";
+  state.scenes.forEach((scene) => {
+    const option = document.createElement("option");
+    option.value = scene.id;
+    option.textContent = scene.id === "default" ? "默认场景" : scene.name || scene.id;
+    ui.finalStartSceneSelect.append(option);
+  });
+  ui.finalStartSceneSelect.value = hasScene(selected) ? selected : "default";
 }
 
 function renderSceneFlowOptions() {
@@ -842,6 +892,7 @@ function syncSceneControls() {
   if (ui.xfyunVoiceSelect) {
     ui.xfyunVoiceSelect.value = state.xfyunVoice;
   }
+  renderFinalStartSceneOptions();
   syncSceneMediaControls();
   syncSceneFlowControls();
   const demo = document.querySelector(".demo-link");
@@ -978,6 +1029,7 @@ function setupSceneAudio({ autoplay = false, restart = false } = {}) {
 
 function playSceneAudio({ restart = false } = {}) {
   if (!ui.sceneAudio || !state.sceneAudioAsset || state.paused) return;
+  if (!restart && !state.audioLoop && isSceneAudioFinished()) return;
   if (restart) {
     try {
       ui.sceneAudio.currentTime = 0;
@@ -985,6 +1037,13 @@ function playSceneAudio({ restart = false } = {}) {
   }
   ui.sceneAudio.loop = state.audioLoop;
   ui.sceneAudio.play?.().catch(() => {});
+}
+
+function isSceneAudioFinished() {
+  if (!ui.sceneAudio) return false;
+  if (ui.sceneAudio.ended) return true;
+  const duration = Number(ui.sceneAudio.duration);
+  return Number.isFinite(duration) && duration > 0 && ui.sceneAudio.currentTime >= duration - 0.05;
 }
 
 function hasFiniteScenePlayback() {
