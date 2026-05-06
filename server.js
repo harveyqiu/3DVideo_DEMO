@@ -7,7 +7,9 @@ const rootDir = __dirname;
 const port = Number(process.env.PORT || 5174);
 const moonshotApiKey = process.env.MOONSHOT_API_KEY || "";
 const moonshotBaseUrl = process.env.MOONSHOT_BASE_URL || "https://api.moonshot.cn/v1";
-const kimiModel = process.env.KIMI_MODEL || "kimi-k2.6";
+const kimiModel = process.env.KIMI_MODEL || "kimi-k2.5";
+const kimiTimeoutMs = Number(process.env.KIMI_TIMEOUT_MS || 12000);
+const kimiMaxTokens = Number(process.env.KIMI_MAX_TOKENS || 160);
 const xfyunAppId = process.env.XFYUN_APP_ID || "";
 const xfyunApiKey = process.env.XFYUN_API_KEY || "";
 const xfyunApiSecret = process.env.XFYUN_API_SECRET || "";
@@ -180,6 +182,7 @@ async function handleAssets(request, response, url) {
 }
 
 async function handleDirectorCue(request, response) {
+  const requestStartedAt = Date.now();
   if (request.method !== "POST") {
     sendJson(response, 405, { error: "method_not_allowed" });
     return;
@@ -207,11 +210,43 @@ async function handleDirectorCue(request, response) {
   const age = scene.ageFeedback ? Number(scene.user_age || variables.user_age || 0) || null : scene.ageRequired ? extractAge(text) : null;
   const messages = buildDirectorMessages(text, beatKey, conversation, { scene, variables, age });
 
-  const { response: upstreamResponse, payload: upstreamPayload } = await requestMoonshot(messages);
+  const { response: upstreamResponse, payload: upstreamPayload, timing } = await requestMoonshot(messages);
   if (!upstreamResponse.ok) {
+    const totalMs = Date.now() - requestStartedAt;
+    if (upstreamResponse.status === 504) {
+      sendJson(response, 200, {
+        cue: directorCueFromReply("", text, beatKey, { scene, variables, age }),
+        warning: upstreamPayload.error?.message || upstreamResponse.statusText,
+        debug: {
+          request: {
+            url: `${moonshotBaseUrl}/chat/completions`,
+            model: kimiModel,
+            timeoutMs: kimiTimeoutMs,
+            maxTokens: kimiMaxTokens,
+            beatKey,
+            scene,
+            variables,
+            extractedAge: age,
+            messages,
+          },
+          response: upstreamPayload,
+          rawContent: "",
+          extractedReply: "",
+          timing: {
+            ...timing,
+            totalMs,
+          },
+        },
+      });
+      return;
+    }
     sendJson(response, upstreamResponse.status, {
       error: "moonshot_request_failed",
       message: upstreamPayload.error?.message || upstreamResponse.statusText,
+      timing: {
+        ...timing,
+        totalMs,
+      },
     });
     return;
   }
@@ -225,6 +260,8 @@ async function handleDirectorCue(request, response) {
       request: {
         url: `${moonshotBaseUrl}/chat/completions`,
         model: kimiModel,
+        timeoutMs: kimiTimeoutMs,
+        maxTokens: kimiMaxTokens,
         beatKey,
         scene,
         variables,
@@ -234,6 +271,10 @@ async function handleDirectorCue(request, response) {
       response: upstreamPayload,
       rawContent: content,
       extractedReply: reply,
+      timing: {
+        ...timing,
+        totalMs: Date.now() - requestStartedAt,
+      },
     },
   });
 }
@@ -279,56 +320,76 @@ async function handleTts(request, response) {
 }
 
 async function requestMoonshot(messages) {
+  const startedAt = Date.now();
   const attempts = [
     {
       model: kimiModel,
       messages,
-      temperature: 1,
-      max_completion_tokens: 2048,
-    },
-    {
-      model: kimiModel,
-      messages,
-      temperature: 1,
+      max_completion_tokens: kimiMaxTokens,
+      thinking: { type: "disabled" },
     },
   ];
 
   let last = null;
-  for (const body of attempts) {
-    const response = await fetch(`${moonshotBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${moonshotApiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    const payload = await response.json().catch(() => ({}));
-    last = { response, payload };
-    if (response.ok) {
-      const content = payload.choices?.[0]?.message?.content || "";
-      const finishReason = payload.choices?.[0]?.finish_reason || "";
-      const exhaustedBeforeFinal = !content.trim() && finishReason === "length" && body.max_completion_tokens;
-      if (exhaustedBeforeFinal && body.max_completion_tokens < 4096) {
-        const retryBody = { ...body, max_completion_tokens: 4096 };
-        const retryResponse = await fetch(`${moonshotBaseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${moonshotApiKey}`,
-          },
-          body: JSON.stringify(retryBody),
-        });
-        const retryPayload = await retryResponse.json().catch(() => ({}));
-        return { response: retryResponse, payload: retryPayload };
+  for (let index = 0; index < attempts.length; index += 1) {
+    const body = attempts[index];
+    const attemptStartedAt = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), kimiTimeoutMs);
+    let response;
+    let payload;
+    try {
+      response = await fetch(`${moonshotBaseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${moonshotApiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      payload = await response.json().catch(() => ({}));
+    } catch (error) {
+      if (error.name === "AbortError") {
+        const timing = {
+          timeout: true,
+          attempts: index + 1,
+          attemptMs: Date.now() - attemptStartedAt,
+          upstreamMs: Date.now() - startedAt,
+        };
+        return {
+          response: { ok: false, status: 504, statusText: "Moonshot request timed out" },
+          payload: { error: { message: `Kimi response timed out after ${kimiTimeoutMs}ms.` } },
+          timing,
+        };
       }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const timing = {
+      timeout: false,
+      attempts: index + 1,
+      attemptMs: Date.now() - attemptStartedAt,
+      upstreamMs: Date.now() - startedAt,
+    };
+    last = { response, payload, timing };
+    if (response.ok) {
       return last;
     }
 
     const message = String(payload.error?.message || payload.message || response.statusText);
-    const retryableParameterError =
-      response.status === 400 && /response_format|max_completion_tokens|max_tokens|temperature/i.test(message);
-    if (!retryableParameterError) return last;
+    const retryableThinkingError = response.status === 400 && /thinking|unsupported|unknown|invalid/i.test(message);
+    if (retryableThinkingError && body.thinking) {
+      attempts.push({
+        model: kimiModel,
+        messages,
+        max_completion_tokens: kimiMaxTokens,
+      });
+      continue;
+    }
+    return last;
   }
   return last;
 }

@@ -368,7 +368,8 @@
             ]
           },
           "xfyunVoice": "x6_lingfeiyi_pro",
-          "ageRequired": false
+          "ageRequired": false,
+          "realtimeReply": false
         },
         "items": [
           {
@@ -401,7 +402,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T12:39:24.551Z"
+      "updatedAt": "2026-05-06T15:02:40.050Z"
     },
     "h2-motzlpd2": {
       "name": "H2",
@@ -879,7 +880,8 @@
             ]
           },
           "xfyunVoice": "x6_lingfeiyi_pro",
-          "ageRequired": false
+          "ageRequired": false,
+          "realtimeReply": true
         },
         "items": [
           {
@@ -912,7 +914,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T12:41:17.117Z"
+      "updatedAt": "2026-05-06T14:29:23.532Z"
     },
     "s0-1-s-mou1ivfc": {
       "name": "S0-1-S",
@@ -982,6 +984,174 @@
         ]
       },
       "updatedAt": "2026-05-06T12:37:37.499Z"
+    },
+    "y0-mou5gdhg": {
+      "name": "Y0",
+      "payload": {
+        "id": "y0-mou5gdhg",
+        "name": "Y0",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/Y0.mp3",
+            "name": "Y0.mp3",
+            "url": "/uploads/Y0.mp3",
+            "type": "audio/mpeg",
+            "size": 116242
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "y1-mou6fz8h",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "s0-1-s-mou1ivfc"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": [
+          {
+            "id": "992e8fc5-a797-4b69-b75e-29c1cf6a0bbf",
+            "name": "1_副本.webm",
+            "assetKey": "uploads/1_副本.webm",
+            "assetUrl": "/uploads/1_副本.webm",
+            "assetType": "video/webm",
+            "x": -195.74442896935932,
+            "y": -4.302850550064463,
+            "z": -79.625,
+            "scale": 0.929,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "f0ae55b0-fc75-4508-b166-b629b307500a",
+            "name": "3_副本2.webm",
+            "assetKey": "uploads/3_副本2.webm",
+            "assetUrl": "/uploads/3_副本2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 140.79999999999995,
+            "z": 980,
+            "scale": 1.891,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "bac38d05-97eb-4ae6-86a4-646187cfd119",
+            "name": "Y0.webm",
+            "assetKey": "uploads/Y0.webm",
+            "assetUrl": "/uploads/Y0.webm",
+            "assetType": "video/webm",
+            "x": -31.200000000000045,
+            "y": 89.60000000000002,
+            "z": 298,
+            "scale": 1.151,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T14:57:59.776Z"
+    },
+    "y1-mou6fz8h": {
+      "name": "Y1",
+      "payload": {
+        "id": "y1-mou6fz8h",
+        "name": "Y1",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/Y0.mp3",
+            "name": "Y0.mp3",
+            "url": "/uploads/Y0.mp3",
+            "type": "audio/mpeg",
+            "size": 116242
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "none",
+            "nextSceneId": "s0-1-s-mou1ivfc",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "s0-1-s-mou1ivfc"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": [
+          {
+            "id": "0ac0ad13-b538-4139-ae2d-9c4b4654639d",
+            "name": "1-3.webm",
+            "assetKey": "uploads/1-3.webm",
+            "assetUrl": "/uploads/1-3.webm",
+            "assetType": "video/webm",
+            "x": 66.73488083099113,
+            "y": -33.24991293266265,
+            "z": 25.19999999999999,
+            "scale": 1.04,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "fa0d6b4d-d8cb-4724-83b0-1931d8f928d1",
+            "name": "3_副本.webm",
+            "assetKey": "uploads/3_副本.webm",
+            "assetUrl": "/uploads/3_副本.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 102.40000000000003,
+            "z": 558.4000000000001,
+            "scale": 1.5580000000000003,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "6c9ce0ea-1138-488b-a670-db309d660c61",
+            "name": "Y1.webm",
+            "assetKey": "uploads/Y1.webm",
+            "assetUrl": "/uploads/Y1.webm",
+            "assetType": "video/webm",
+            "x": 20.800000000000068,
+            "y": 76.80000000000001,
+            "z": 240,
+            "scale": 1.0030000000000001,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T15:01:50.940Z"
     }
   },
   "settings": {

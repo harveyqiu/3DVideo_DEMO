@@ -30,9 +30,9 @@
         <div class="final-control-dock">
           <button
             id="playPauseButton"
-            class="play-pause-button playing"
+            class="play-pause-button paused"
             type="button"
-            aria-label="暂停画面"
+            aria-label="播放画面"
             title="播放 / 暂停"
           >
             <span class="pause-icon" aria-hidden="true"></span>
@@ -54,6 +54,20 @@
             <p id="voiceReply"></p>
           </section>
         </div>
+
+        <div id="finalIntroModal" class="final-intro-modal" role="dialog" aria-modal="true" aria-labelledby="finalIntroTitle">
+          <div class="final-intro-card">
+            <button id="finalIntroClose" class="final-intro-close" type="button" aria-label="关闭说明">×</button>
+            <h1 id="finalIntroTitle">你好！这是一个 3D 互动视频。</h1>
+            <p>先花半分钟看一下怎么使用，准备好了就可以开始体验。</p>
+            <ol>
+              <li>这个页面会通过摄像头采集面部信息来改变画面视角。请先点击左上角的“开启摄像头”，并在浏览器弹窗中选择“允许”。</li>
+              <li>左下角是对话模块。主人公向你提问时，可以点击“语音”直接说话；如果不方便开口，也可以输入文字后点击“发送”。</li>
+              <li>左下角圆形按钮控制整个页面的播放和暂停。页面已先为你暂停，关闭这个提示后，点击“播放”就可以开始。</li>
+            </ol>
+            <button id="finalIntroPrimary" class="final-intro-primary" type="button">知道了</button>
+          </div>
+        </div>
       </main>
 
       <div class="hidden-controls" aria-hidden="true">
@@ -66,6 +80,8 @@
         <input id="gifLoopToggle" type="checkbox" checked />
         <input id="audioLoopToggle" type="checkbox" checked />
         <input id="webmLoopToggle" type="checkbox" checked />
+        <input id="ageRequiredToggle" type="checkbox" />
+        <input id="realtimeReplyToggle" type="checkbox" />
         <select id="sceneEndMode">
           <option value="none">none</option>
           <option value="auto">auto</option>

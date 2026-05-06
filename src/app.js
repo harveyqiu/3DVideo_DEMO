@@ -21,6 +21,7 @@ const ui = {
   audioLoopToggle: document.querySelector("#audioLoopToggle"),
   webmLoopToggle: document.querySelector("#webmLoopToggle"),
   ageRequiredToggle: document.querySelector("#ageRequiredToggle"),
+  realtimeReplyToggle: document.querySelector("#realtimeReplyToggle"),
   sceneEndMode: document.querySelector("#sceneEndMode"),
   sceneNextSceneSelect: document.querySelector("#sceneNextSceneSelect"),
   flowRouteRows: document.querySelectorAll("[data-flow-route]"),
@@ -61,6 +62,9 @@ const ui = {
   layoutStatus: document.querySelector("#layoutStatus"),
   viewerStartButton: document.querySelector("#viewerStartButton"),
   playPauseButton: document.querySelector("#playPauseButton"),
+  finalIntroModal: document.querySelector("#finalIntroModal"),
+  finalIntroClose: document.querySelector("#finalIntroClose"),
+  finalIntroPrimary: document.querySelector("#finalIntroPrimary"),
   values: {
     focalRange: document.querySelector("#focalValue"),
     parallaxRange: document.querySelector("#parallaxValue"),
@@ -109,6 +113,7 @@ const state = {
   sceneEnded: false,
   xfyunVoice: "x6_lingfeiyi_pro",
   ageRequired: false,
+  realtimeReply: false,
   userVariables: {},
   pendingAgeFlow: null,
   activeTts: null,
@@ -116,7 +121,7 @@ const state = {
   gifPlayers: new Map(),
   gifPauseFrames: new Map(),
   scenePlaybackToken: 0,
-  paused: false,
+  paused: isFinal,
   transitionToken: 0,
   voice: {
     recognition: null,
@@ -194,7 +199,7 @@ async function init() {
     });
   }
   if (isFinal) {
-    updateCaption("你醒了。先判断方向，再决定找火还是找水。");
+    updateCaption("");
   }
 }
 
@@ -275,6 +280,10 @@ function bindEvents() {
     state.ageRequired = ui.ageRequiredToggle.checked;
     scheduleSaveLayout();
   });
+  ui.realtimeReplyToggle?.addEventListener("change", () => {
+    state.realtimeReply = ui.realtimeReplyToggle.checked;
+    scheduleSaveLayout();
+  });
   ui.sceneAudio?.addEventListener("ended", () => handleSceneMediaEnded());
   ui.sceneEndMode?.addEventListener("change", () => {
     state.sceneFlow.mode = ui.sceneEndMode.value;
@@ -305,6 +314,14 @@ function bindEvents() {
     }
   });
   ui.playPauseButton?.addEventListener("click", togglePlayback);
+  ui.finalIntroClose?.addEventListener("click", closeFinalIntroModal);
+  ui.finalIntroPrimary?.addEventListener("click", closeFinalIntroModal);
+  ui.finalIntroModal?.addEventListener("click", (event) => {
+    if (event.target === ui.finalIntroModal) closeFinalIntroModal();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeFinalIntroModal();
+  });
   ui.scriptBeatSelect.addEventListener("change", () => {
     setVoiceStatus(`已切换到：${getCurrentBeat().title}`);
   });
@@ -766,6 +783,7 @@ async function loadSceneById(sceneId) {
   state.sceneFlow = normalizeSceneFlow(layout.scene?.flow || layout.scene?.sceneFlow);
   state.xfyunVoice = normalizeXfyunVoice(layout.scene?.xfyunVoice || layout.scene?.ttsVoice);
   state.ageRequired = Boolean(layout.scene?.ageRequired);
+  state.realtimeReply = Boolean(layout.scene?.realtimeReply);
   state.sceneEnded = false;
   ui.focalRange.value = String(valueToRange("focalRange", state.focal));
   ui.parallaxRange.value = String(valueToRange("parallaxRange", state.parallax));
@@ -917,6 +935,7 @@ function syncSceneFlowControls() {
   renderSceneFlowOptions();
   if (ui.sceneEndMode) ui.sceneEndMode.value = state.sceneFlow.mode || "none";
   if (ui.ageRequiredToggle) ui.ageRequiredToggle.checked = state.ageRequired;
+  if (ui.realtimeReplyToggle) ui.realtimeReplyToggle.checked = state.realtimeReply;
   if (ui.sceneNextSceneSelect) ui.sceneNextSceneSelect.value = state.sceneFlow.nextSceneId || "";
   const flowMode = ui.sceneEndMode?.value || state.sceneFlow.mode || "none";
   document.querySelectorAll("[data-flow-visible]").forEach((element) => {
@@ -1279,6 +1298,7 @@ function serializeLayout() {
       flow: state.sceneFlow,
       xfyunVoice: state.xfyunVoice,
       ageRequired: state.ageRequired,
+      realtimeReply: state.realtimeReply,
     },
     items: state.items
       .filter((item) => item.assetUrl || item.src)
@@ -1810,6 +1830,11 @@ function togglePlayback() {
     if (state.paused) ui.sceneAudio.pause();
     else playSceneAudio();
   }
+}
+
+function closeFinalIntroModal() {
+  if (!ui.finalIntroModal || ui.finalIntroModal.hidden) return;
+  ui.finalIntroModal.hidden = true;
 }
 
 function drawReticle() {
@@ -2618,6 +2643,15 @@ async function handleAudienceSpeech(text) {
     try {
       switched = await triggerSceneFlowKeywordSwitch(text);
       if (!switched) switched = await triggerKeywordSceneSwitch(text);
+      if (!state.realtimeReply) {
+        const reply = switched ? "" : makeFinalReply(text, switched);
+        ui.voiceReply.textContent = reply;
+        updateCaption(reply);
+        state.voice.conversation.push({ role: "user", content: text }, { role: "assistant", content: reply });
+        state.voice.conversation = state.voice.conversation.slice(-10);
+        setVoiceStatus(switched ? "场景已切换，未调用实时回复" : "未调用实时回复");
+        return;
+      }
       const cue = await getDirectorCue(text);
       await applyCueFlow(cue);
       const reply = cue.reply || makeFinalReply(text, switched);
@@ -2648,6 +2682,16 @@ async function handleAudienceSpeech(text) {
   setVoiceStatus("正在根据剧本走向生成回应", "thinking");
 
   try {
+    if (!state.realtimeReply) {
+      const fallback = makeLocalDirectorCue(text);
+      applyDirectorCue(fallback);
+      ui.voiceReply.textContent = fallback.reply;
+      updateCaption(fallback.reply);
+      state.voice.conversation.push({ role: "user", content: text }, { role: "assistant", content: fallback.reply });
+      state.voice.conversation = state.voice.conversation.slice(-10);
+      setVoiceStatus("未调用实时回复，已使用本地规则");
+      return;
+    }
     const cue = await getDirectorCue(text);
     await applyCueFlow(cue);
     applyDirectorCue(cue);
@@ -2673,6 +2717,7 @@ async function handleAudienceSpeech(text) {
 }
 
 async function getDirectorCue(text, overrides = {}) {
+  const clientStartedAt = performance.now();
   const scenePayload = {
     id: state.currentSceneId,
     ageRequired: state.ageRequired,
@@ -2695,12 +2740,33 @@ async function getDirectorCue(text, overrides = {}) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
+    const clientMs = Math.round(performance.now() - clientStartedAt);
+    if (payload.timing) {
+      renderKimiDebug({
+        response: payload,
+        timing: {
+          ...payload.timing,
+          clientMs,
+        },
+      });
+    }
     const message = payload.message || payload.error || response.statusText;
-    throw new Error(`Kimi 请求失败：${response.status} ${message}`);
+    throw new Error(`Kimi 请求失败：${response.status} ${message}（网页等待 ${formatDuration(clientMs)}）`);
   }
 
   const payload = await response.json();
+  const clientMs = Math.round(performance.now() - clientStartedAt);
+  if (payload.debug) {
+    payload.debug.timing = {
+      ...(payload.debug.timing || {}),
+      clientMs,
+    };
+  }
   renderKimiDebug(payload.debug);
+  const serverMs = payload.debug?.timing?.upstreamMs;
+  setVoiceStatus(
+    `Kimi 已返回：网页等待 ${formatDuration(clientMs)}${serverMs ? `，服务端 ${formatDuration(serverMs)}` : ""}`,
+  );
   if (payload.cue) return payload.cue;
   const content = payload.choices?.[0]?.message?.content ?? "";
   return parseDirectorCue(content) ?? makeLocalDirectorCue(text);
@@ -2802,6 +2868,7 @@ function renderKimiDebug(debug) {
   if (ui.kimiResponseDebug) {
     ui.kimiResponseDebug.textContent = JSON.stringify(
       {
+        timing: debug.timing,
         rawContent: debug.rawContent,
         extractedReply: debug.extractedReply,
         response: debug.response,
@@ -2836,7 +2903,7 @@ async function triggerKeywordSceneSwitch(text) {
 function makeFinalReply(text, switched) {
   if (switched === "scene2") return "火。可以，但动作要快。";
   if (switched === "scene3") return "水更重要。先确认能不能喝。";
-  if (switched) return `已进入：${getSceneLabel(switched)}`;
+  if (switched) return "";
   return text ? "我听见了。继续说重点。" : "先说你的选择。";
 }
 
@@ -3047,4 +3114,11 @@ function makeId() {
   return (
     globalThis.crypto?.randomUUID?.() ?? `item-${Date.now()}-${Math.random().toString(16).slice(2)}`
   );
+}
+
+function formatDuration(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value)) return "--";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  return `${(value / 1000).toFixed(1)}s`;
 }
