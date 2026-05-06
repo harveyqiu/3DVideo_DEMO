@@ -355,11 +355,11 @@
           "webmLoop": false,
           "flow": {
             "mode": "dialog",
-            "nextSceneId": "default",
+            "nextSceneId": "s0-1-s-mou1ivfc",
             "routes": [
               {
                 "keywords": "水",
-                "sceneId": "a1-mos899qj"
+                "sceneId": "s0-1-s-mou1ivfc"
               },
               {
                 "keywords": "火",
@@ -401,7 +401,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T11:35:27.456Z"
+      "updatedAt": "2026-05-06T12:39:24.551Z"
     },
     "h2-motzlpd2": {
       "name": "H2",
@@ -855,26 +855,26 @@
           "parallax": 90,
           "showGrid": false,
           "audioAsset": {
-            "key": "uploads/S2.mp3",
-            "name": "S2.mp3",
-            "url": "/uploads/S2.mp3",
+            "key": "uploads/S0-2.mp3",
+            "name": "S0-2.mp3",
+            "url": "/uploads/S0-2.mp3",
             "type": "audio/mpeg",
-            "size": 81970
+            "size": 162218
           },
-          "audioLoop": false,
-          "gifLoop": false,
-          "webmLoop": false,
+          "audioLoop": true,
+          "gifLoop": true,
+          "webmLoop": true,
           "flow": {
-            "mode": "auto",
+            "mode": "dialog",
             "nextSceneId": "s3-s-mou0r5it",
             "routes": [
               {
-                "keywords": "水",
-                "sceneId": "a1-mos899qj"
+                "keywords": "试",
+                "sceneId": "s2-s-mou0u2fk"
               },
               {
-                "keywords": "火",
-                "sceneId": "t2-motyjdhn"
+                "keywords": "不",
+                "sceneId": "s3-s-mou0r5it"
               }
             ]
           },
@@ -891,28 +891,97 @@
             "x": 10.399999999999977,
             "y": 70.39999999999998,
             "z": -12,
-            "scale": 0.67,
+            "scale": 1.04,
             "rotation": 0,
             "tilt": 0,
             "alpha": 1
           },
           {
-            "id": "8e98b7a0-78de-4ce9-9c0c-03818b9640b8",
-            "name": "2-2.gif",
-            "assetKey": "uploads/2-2.gif",
-            "assetUrl": "/uploads/2-2.gif",
-            "assetType": "image/gif",
-            "x": 74.12882001856376,
-            "y": 84.54521188468613,
-            "z": 818.8,
-            "scale": 2.8899999999999997,
+            "id": "c53ead4f-4685-4307-adec-4314b28ace9e",
+            "name": "2.webm",
+            "assetKey": "uploads/2.webm",
+            "assetUrl": "/uploads/2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 38.400000000000034,
+            "z": 905.5999999999999,
+            "scale": 1.5580000000000003,
             "rotation": 0,
             "tilt": 0,
             "alpha": 1
           }
         ]
       },
-      "updatedAt": "2026-05-06T12:23:04.232Z"
+      "updatedAt": "2026-05-06T12:41:17.117Z"
+    },
+    "s0-1-s-mou1ivfc": {
+      "name": "S0-1-S",
+      "payload": {
+        "id": "s0-1-s-mou1ivfc",
+        "name": "S0-1-S",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/S0-1.mp3",
+            "name": "S0-1.mp3",
+            "url": "/uploads/S0-1.mp3",
+            "type": "audio/mpeg",
+            "size": 163054
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "s0-s-mou0xldy",
+            "routes": [
+              {
+                "keywords": "试",
+                "sceneId": "s2-s-mou0u2fk"
+              },
+              {
+                "keywords": "不",
+                "sceneId": "s3-s-mou0r5it"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "731cd17a-4985-4762-81be-77c386888b80",
+            "name": "S1-1-1.webm",
+            "assetKey": "uploads/S1-1-1.webm",
+            "assetUrl": "/uploads/S1-1-1.webm",
+            "assetType": "video/webm",
+            "x": 10.399999999999977,
+            "y": 70.39999999999998,
+            "z": -12,
+            "scale": 1.04,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "c53ead4f-4685-4307-adec-4314b28ace9e",
+            "name": "2.webm",
+            "assetKey": "uploads/2.webm",
+            "assetUrl": "/uploads/2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 38.400000000000034,
+            "z": 905.5999999999999,
+            "scale": 1.5580000000000003,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T12:37:37.499Z"
     }
   },
   "settings": {
