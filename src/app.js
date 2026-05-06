@@ -18,6 +18,7 @@ const ui = {
   sceneAudio: document.querySelector("#sceneAudio"),
   gifLoopToggle: document.querySelector("#gifLoopToggle"),
   audioLoopToggle: document.querySelector("#audioLoopToggle"),
+  webmLoopToggle: document.querySelector("#webmLoopToggle"),
   ageRequiredToggle: document.querySelector("#ageRequiredToggle"),
   sceneEndMode: document.querySelector("#sceneEndMode"),
   sceneNextSceneSelect: document.querySelector("#sceneNextSceneSelect"),
@@ -97,6 +98,7 @@ const state = {
   sceneAudioAsset: null,
   audioLoop: true,
   gifLoop: true,
+  webmLoop: true,
   sceneFlow: {
     mode: "none",
     nextSceneId: "",
@@ -256,6 +258,11 @@ function bindEvents() {
   ui.audioLoopToggle?.addEventListener("change", () => {
     state.audioLoop = ui.audioLoopToggle.checked;
     setupSceneAudio();
+    scheduleSaveLayout();
+  });
+  ui.webmLoopToggle?.addEventListener("change", () => {
+    state.webmLoop = ui.webmLoopToggle.checked;
+    applyVideoLoopSettings();
     scheduleSaveLayout();
   });
   ui.ageRequiredToggle?.addEventListener("change", () => {
@@ -458,7 +465,7 @@ function createPendingVideoItem(asset) {
 function hydrateVideoItem(asset, item) {
   const video = document.createElement("video");
   video.muted = true;
-  video.loop = true;
+  video.loop = shouldLoopVideoAsset(asset);
   video.playsInline = true;
   video.autoplay = true;
   video.preload = "auto";
@@ -480,7 +487,7 @@ function hydrateVideoItem(asset, item) {
     item.pendingMedia = video;
     item.status = "MOV 准备中";
     item.thumbnail = makePlaceholderMedia(asset.name, "等待视频帧").toDataURL("image/png");
-    video.play().catch(() => {});
+    if (!state.paused) video.play().catch(() => {});
     updateLayer();
   };
   const onFrame = () => {
@@ -490,7 +497,8 @@ function hydrateVideoItem(asset, item) {
     item.mediaType = "video";
     item.status = asset.name.toLowerCase().endsWith(".webm") ? "WebM" : "MOV";
     item.thumbnail = makeVideoThumbnail(video);
-    video.play().catch(() => {});
+    video.loop = shouldLoopVideoItem(item);
+    if (!state.paused) video.play().catch(() => {});
     updateLayer();
   };
   const onError = () => fail("视频无法解码");
@@ -502,6 +510,7 @@ function hydrateVideoItem(asset, item) {
   video.addEventListener("loadeddata", onFrame);
   video.addEventListener("canplay", onFrame);
   video.addEventListener("error", onError);
+  video.addEventListener("ended", () => handleSceneMediaEnded());
   video.src = item.objectUrl;
   video.load();
 
@@ -571,6 +580,29 @@ function isWebmFile(file) {
 
 function isVideoAsset(asset) {
   return /^video\//.test(asset.type) || /\.(mov|mp4|webm)$/i.test(asset.url);
+}
+
+function isWebmAsset(asset) {
+  return asset.type === "video/webm" || /\.webm(?:$|\?)/i.test(asset.url || asset.name || "");
+}
+
+function isWebmVideoItem(item) {
+  return item.mediaType === "video" && (item.assetType === "video/webm" || /\.webm(?:$|\?)/i.test(item.assetUrl || item.src || item.name || ""));
+}
+
+function shouldLoopVideoAsset(asset) {
+  return !isWebmAsset(asset) || state.webmLoop;
+}
+
+function shouldLoopVideoItem(item) {
+  return !isWebmVideoItem(item) || state.webmLoop;
+}
+
+function applyVideoLoopSettings() {
+  state.items.forEach((item) => {
+    if (item.mediaType !== "video" || !item.media) return;
+    item.media.loop = shouldLoopVideoItem(item);
+  });
 }
 
 function isGifAsset(asset) {
@@ -709,6 +741,7 @@ async function loadSceneById(sceneId) {
   state.sceneAudioAsset = normalizeSceneAudioAsset(layout.scene?.audioAsset);
   state.audioLoop = layout.scene?.audioLoop !== false;
   state.gifLoop = layout.scene?.gifLoop !== false;
+  state.webmLoop = layout.scene?.webmLoop !== false;
   state.sceneFlow = normalizeSceneFlow(layout.scene?.flow || layout.scene?.sceneFlow);
   state.xfyunVoice = normalizeXfyunVoice(layout.scene?.xfyunVoice || layout.scene?.ttsVoice);
   state.ageRequired = Boolean(layout.scene?.ageRequired);
@@ -859,6 +892,7 @@ function normalizeSceneFlow(flow) {
 function syncSceneMediaControls() {
   if (ui.gifLoopToggle) ui.gifLoopToggle.checked = state.gifLoop;
   if (ui.audioLoopToggle) ui.audioLoopToggle.checked = state.audioLoop;
+  if (ui.webmLoopToggle) ui.webmLoopToggle.checked = state.webmLoop;
   if (ui.sceneAudioName) {
     ui.sceneAudioName.textContent = state.sceneAudioAsset?.name || "未设置音频";
     ui.sceneAudioName.classList.toggle("empty", !state.sceneAudioAsset);
@@ -891,7 +925,20 @@ function restartScenePlayback({ autoplay = false } = {}) {
   state.scenePlaybackToken += 1;
   state.sceneEnded = false;
   resetGifPlayback();
+  restartSceneVideos({ autoplay });
   setupSceneAudio({ autoplay, restart: true });
+}
+
+function restartSceneVideos({ autoplay = false } = {}) {
+  state.items.forEach((item) => {
+    if (item.mediaType !== "video" || !item.media) return;
+    item.media.loop = shouldLoopVideoItem(item);
+    try {
+      item.media.currentTime = 0;
+    } catch {}
+    if (autoplay && !state.paused) item.media.play?.().catch(() => {});
+    else item.media.pause?.();
+  });
 }
 
 function scenePlaybackUrl(url) {
@@ -943,7 +990,8 @@ function playSceneAudio({ restart = false } = {}) {
 function hasFiniteScenePlayback() {
   const hasFiniteAudio = Boolean(state.sceneAudioAsset && !state.audioLoop);
   const hasFiniteGif = !state.gifLoop && state.items.some((item) => item.mediaType === "gif");
-  return hasFiniteAudio || hasFiniteGif;
+  const hasFiniteWebm = !state.webmLoop && state.items.some((item) => isWebmVideoItem(item));
+  return hasFiniteAudio || hasFiniteGif || hasFiniteWebm;
 }
 
 function isScenePlaybackFinished() {
@@ -955,7 +1003,12 @@ function isScenePlaybackFinished() {
     state.items
       .filter((item) => item.mediaType === "gif")
       .every((item) => state.gifPlayers.get(item.id)?.ended === true || !("ImageDecoder" in window));
-  return audioDone && gifDone;
+  const webmDone =
+    state.webmLoop ||
+    state.items
+      .filter((item) => isWebmVideoItem(item))
+      .every((item) => item.media?.ended === true || item.media?.duration === 0);
+  return audioDone && gifDone && webmDone;
 }
 
 async function handleSceneMediaEnded() {
@@ -1149,6 +1202,7 @@ function serializeLayout() {
       audioAsset: state.sceneAudioAsset,
       audioLoop: state.audioLoop,
       gifLoop: state.gifLoop,
+      webmLoop: state.webmLoop,
       flow: state.sceneFlow,
       xfyunVoice: state.xfyunVoice,
       ageRequired: state.ageRequired,
@@ -1669,7 +1723,15 @@ function togglePlayback() {
   state.items.forEach((item) => {
     if (item.mediaType !== "video") return;
     if (state.paused) item.media.pause?.();
-    else item.media.play?.().catch(() => {});
+    else {
+      item.media.loop = shouldLoopVideoItem(item);
+      if (item.media.ended) {
+        try {
+          item.media.currentTime = 0;
+        } catch {}
+      }
+      item.media.play?.().catch(() => {});
+    }
   });
   if (ui.sceneAudio) {
     if (state.paused) ui.sceneAudio.pause();
