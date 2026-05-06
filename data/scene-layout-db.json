@@ -402,6 +402,517 @@
         ]
       },
       "updatedAt": "2026-05-06T11:35:27.456Z"
+    },
+    "h2-motzlpd2": {
+      "name": "H2",
+      "payload": {
+        "id": "h2-motzlpd2",
+        "name": "H2",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/H2.mp3",
+            "name": "H2.mp3",
+            "url": "/uploads/H2.mp3",
+            "type": "audio/mpeg",
+            "size": 81970
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "none",
+            "nextSceneId": "default",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "4427baae-fca3-4b4f-9cfc-d2bd495931d5",
+            "name": "2_副本.webm",
+            "assetKey": "uploads/2_副本.webm",
+            "assetUrl": "/uploads/2_副本.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 44.799999999999955,
+            "z": 62.400000000000034,
+            "scale": 0.781,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "f4b1eab5-178c-4d7a-9855-59544bb4fab4",
+            "name": "3.webm",
+            "assetKey": "uploads/3.webm",
+            "assetUrl": "/uploads/3.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 44.799999999999955,
+            "z": 781.5999999999999,
+            "scale": 1.3360000000000003,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "45c6ed7e-1b44-447d-af6c-29954062e291",
+            "name": "H2.webm",
+            "assetKey": "uploads/H2.webm",
+            "assetUrl": "/uploads/H2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 0,
+            "z": -123.6,
+            "scale": 1.04,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T11:45:42.057Z"
+    },
+    "h1-s-motzrxv7": {
+      "name": "H1-S",
+      "payload": {
+        "id": "h1-s-motzrxv7",
+        "name": "H1-S",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/H1.mp3",
+            "name": "H1.mp3",
+            "url": "/uploads/H1.mp3",
+            "type": "audio/mpeg",
+            "size": 46443
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "h2-motzlpd2",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "098caa16-32e9-4920-9d4e-b1efb19e92bc",
+            "name": "H1-1-2.webm",
+            "assetKey": "uploads/H1-1-2.webm",
+            "assetUrl": "/uploads/H1-1-2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 38.400000000000034,
+            "z": 0.39999999999997726,
+            "scale": 0.67,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "25f2045a-435d-4a5d-a41b-9b9a0d77699f",
+            "name": "H1-2-2.webm",
+            "assetKey": "uploads/H1-2-2.webm",
+            "assetUrl": "/uploads/H1-2-2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 38.400000000000034,
+            "z": 471.5999999999999,
+            "scale": 0.966,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T11:58:51.376Z"
+    },
+    "h0-s-mou07xrb": {
+      "name": "H0-S",
+      "payload": {
+        "id": "h0-s-mou07xrb",
+        "name": "H0-S",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/H0.mp3",
+            "name": "H0.mp3",
+            "url": "/uploads/H0.mp3",
+            "type": "audio/mpeg",
+            "size": 90747
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "h1-s-motzrxv7",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "ddcd1e83-05f6-4868-bc55-911d793a2629",
+            "name": "1-2.webm",
+            "assetKey": "uploads/1-2.webm",
+            "assetUrl": "/uploads/1-2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 121.59999999999997,
+            "z": 240,
+            "scale": 1.04,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "239bfacb-9676-444e-a4e6-350f9a4f0d72",
+            "name": "3-1.webm",
+            "assetKey": "uploads/3-1.webm",
+            "assetUrl": "/uploads/3-1.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 38.400000000000034,
+            "z": 980,
+            "scale": 1.3360000000000003,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "a682b17e-1d7b-4e51-a59c-11ac8adc3d32",
+            "name": "H0.webm",
+            "assetKey": "uploads/H0.webm",
+            "assetUrl": "/uploads/H0.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 76.80000000000001,
+            "z": 273.20000000000005,
+            "scale": 0.8920000000000001,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T12:00:49.917Z"
+    },
+    "s1-s-mou0l3qm": {
+      "name": "S1-S",
+      "payload": {
+        "id": "s1-s-mou0l3qm",
+        "name": "S1-S",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/S1_摘椰子.mp3",
+            "name": "S1_摘椰子.mp3",
+            "url": "/uploads/S1_摘椰子.mp3",
+            "type": "audio/mpeg",
+            "size": 81970
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "h0-s-mou07xrb",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "7da39a4f-d5eb-4335-9e89-95cdbb584945",
+            "name": "S1-1.webm",
+            "assetKey": "uploads/S1-1.webm",
+            "assetUrl": "/uploads/S1-1.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 38.400000000000034,
+            "z": -45.05000000000001,
+            "scale": 0.781,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "14f94930-c8f7-4a30-a123-cf4e677d3861",
+            "name": "摘椰子.webm",
+            "assetKey": "uploads/摘椰子.webm",
+            "assetUrl": "/uploads/摘椰子.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 64,
+            "z": 583.2,
+            "scale": 1.3360000000000003,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T12:13:49.994Z"
+    },
+    "s3-s-mou0r5it": {
+      "name": "S3-S",
+      "payload": {
+        "id": "s3-s-mou0r5it",
+        "name": "S3-S",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/S3-1.mp3",
+            "name": "S3-1.mp3",
+            "url": "/uploads/S3-1.mp3",
+            "type": "audio/mpeg",
+            "size": 81970
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "s1-s-mou0l3qm",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "d6011611-a147-4fa1-b48a-4a02845892b6",
+            "name": "S3_2.webm",
+            "assetKey": "uploads/S3_2.webm",
+            "assetUrl": "/uploads/S3_2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 76.80000000000001,
+            "z": 980,
+            "scale": 1.595,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "fe15b0cd-264c-4172-9377-e84bf916744f",
+            "name": "S3.webm",
+            "assetKey": "uploads/S3.webm",
+            "assetUrl": "/uploads/S3.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 96,
+            "z": 25.19999999999999,
+            "scale": 0.781,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T12:15:57.443Z"
+    },
+    "s2-s-mou0u2fk": {
+      "name": "S2-S",
+      "payload": {
+        "id": "s2-s-mou0u2fk",
+        "name": "S2-S",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/S2.mp3",
+            "name": "S2.mp3",
+            "url": "/uploads/S2.mp3",
+            "type": "audio/mpeg",
+            "size": 81970
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "s3-s-mou0r5it",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "057fefed-ed09-4202-9fff-a03cb24db8d0",
+            "name": "S2_2.webm",
+            "assetKey": "uploads/S2_2.webm",
+            "assetUrl": "/uploads/S2_2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 134.39999999999998,
+            "z": 980,
+            "scale": 1.595,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "eb728edd-87e9-4465-b69f-9b2bb80f7b03",
+            "name": "S2.webm",
+            "assetKey": "uploads/S2.webm",
+            "assetUrl": "/uploads/S2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 89.60000000000002,
+            "z": 37.599999999999966,
+            "scale": 0.855,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T12:18:39.521Z"
+    },
+    "s0-s-mou0xldy": {
+      "name": "S0-S",
+      "payload": {
+        "id": "s0-s-mou0xldy",
+        "name": "S0-S",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/S2.mp3",
+            "name": "S2.mp3",
+            "url": "/uploads/S2.mp3",
+            "type": "audio/mpeg",
+            "size": 81970
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "s3-s-mou0r5it",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "731cd17a-4985-4762-81be-77c386888b80",
+            "name": "S1-1-1.webm",
+            "assetKey": "uploads/S1-1-1.webm",
+            "assetUrl": "/uploads/S1-1-1.webm",
+            "assetType": "video/webm",
+            "x": 10.399999999999977,
+            "y": 70.39999999999998,
+            "z": -12,
+            "scale": 0.67,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "8e98b7a0-78de-4ce9-9c0c-03818b9640b8",
+            "name": "2-2.gif",
+            "assetKey": "uploads/2-2.gif",
+            "assetUrl": "/uploads/2-2.gif",
+            "assetType": "image/gif",
+            "x": 74.12882001856376,
+            "y": 84.54521188468613,
+            "z": 818.8,
+            "scale": 2.8899999999999997,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T12:23:04.232Z"
     }
   },
   "settings": {

@@ -533,6 +533,16 @@ function placeNewItem(item, index) {
     rotation: degreesToRadians((index % 5 - 2) * 5),
     tilt: degreesToRadians((index % 4 - 1.5) * 11),
   });
+
+  if (isWebmLayerItem(item)) {
+    Object.assign(item, {
+      x: rangeToValue("xRange", 50),
+      y: rangeToValue("yRange", 56),
+      scale: rangeToValue("scaleRange", 20),
+      rotation: rangeToValue("rotationRange", 50),
+      tilt: rangeToValue("tiltRange", 50),
+    });
+  }
 }
 
 function createItem(name, src, media, mediaType) {
@@ -594,6 +604,10 @@ function isWebmAsset(asset) {
 
 function isWebmVideoItem(item) {
   return item.mediaType === "video" && (item.assetType === "video/webm" || /\.webm(?:$|\?)/i.test(item.assetUrl || item.src || item.name || ""));
+}
+
+function isWebmLayerItem(item) {
+  return item.assetType === "video/webm" || /\.webm(?:$|\?)/i.test(item.assetUrl || item.src || item.name || "");
 }
 
 function shouldLoopVideoAsset(asset) {

@@ -46,6 +46,21 @@ input[type="text"] {
   font: inherit;
 }
 
+select {
+  background-color: var(--panel-solid);
+  color: var(--text);
+}
+
+select option {
+  background-color: #151a17;
+  color: var(--text);
+}
+
+select option:checked {
+  background-color: #2a3733;
+  color: var(--accent);
+}
+
 button,
 .file-button {
   min-height: 42px;
@@ -271,12 +286,17 @@ input[type="checkbox"] {
 #sceneSelect,
 #sceneNameInput,
 #xfyunVoiceSelect,
-#voiceTextInput {
+#finalStartSceneSelect,
+#sceneEndMode,
+#sceneNextSceneSelect,
+#voiceTextInput,
+[data-flow-scene],
+[data-flow-keywords] {
   width: 100%;
   min-height: 38px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  background: #202622;
   color: var(--text);
   padding: 0 10px;
 }
