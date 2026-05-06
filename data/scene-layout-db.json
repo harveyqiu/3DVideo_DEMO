@@ -333,6 +333,74 @@
         ]
       },
       "updatedAt": "2026-05-05T16:17:46.527Z"
+    },
+    "t2-motyjdhn": {
+      "name": "T2",
+      "payload": {
+        "id": "t2-motyjdhn",
+        "name": "T2",
+        "scene": {
+          "focal": 933.4000000000001,
+          "parallax": 90,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/T0_生火还是打水.mp3",
+            "name": "T0_生火还是打水.mp3",
+            "url": "/uploads/T0_生火还是打水.mp3",
+            "type": "audio/mpeg",
+            "size": 48115
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "flow": {
+            "mode": "dialog",
+            "nextSceneId": "default",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false
+        },
+        "items": [
+          {
+            "id": "19675826-76f1-4e48-8606-3f1b18562bbb",
+            "name": "T0_生火还是打水.webm",
+            "assetKey": "uploads/T0_生火还是打水.webm",
+            "assetUrl": "/uploads/T0_生火还是打水.webm",
+            "assetType": "video/webm",
+            "x": -10.400000000000034,
+            "y": 6.399999999999977,
+            "z": 161.60000000000002,
+            "scale": 0.929,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "0b498ce1-c4ca-4559-a830-ca31c5cbe671",
+            "name": "T2-2.webm",
+            "assetKey": "uploads/T2-2.webm",
+            "assetUrl": "/uploads/T2-2.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 0,
+            "z": 632.8,
+            "scale": 1.262,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-06T11:17:32.406Z"
     }
   }
 }
