@@ -485,6 +485,31 @@ function createPendingVideoItem(asset) {
   return item;
 }
 
+function createReadyImageItem(asset, image) {
+  const mediaType = isGifAsset(asset) ? "gif" : "image";
+  const item = createItem(asset.name, asset.url, image, mediaType);
+  item.status = mediaType === "gif" ? "GIF" : "图片";
+  item.assetKey = asset.key;
+  item.assetUrl = asset.url;
+  item.assetType = asset.type;
+  return item;
+}
+
+function createReadyVideoItem(asset, video) {
+  video.muted = true;
+  video.loop = shouldLoopVideoAsset(asset);
+  video.playsInline = true;
+  video.preload = "auto";
+  video.addEventListener("ended", () => handleSceneMediaEnded());
+  const item = createItem(asset.name, asset.url, video, "video");
+  item.status = asset.name.toLowerCase().endsWith(".webm") ? "WebM" : "MOV";
+  item.thumbnail = makeVideoThumbnail(video);
+  item.assetKey = asset.key;
+  item.assetUrl = asset.url;
+  item.assetType = asset.type;
+  return item;
+}
+
 function hydrateVideoItem(asset, item) {
   const video = document.createElement("video");
   video.muted = true;
@@ -762,13 +787,22 @@ async function loadInitialScene() {
 
 async function loadSceneById(sceneId) {
   state.loadingScene = true;
-  const response = await fetch(`/api/layout?id=${encodeURIComponent(sceneId)}`);
-  if (!response.ok) {
+  const layout = await fetchSceneLayout(sceneId);
+  if (!layout) {
     state.loadingScene = false;
     return false;
   }
+  return applySceneLayout(layout, sceneId);
+}
 
-  const layout = await response.json();
+async function fetchSceneLayout(sceneId) {
+  const response = await fetch(`/api/layout?id=${encodeURIComponent(sceneId)}`);
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function applySceneLayout(layout, sceneId, preloadedAssets = new Map()) {
+  state.loadingScene = true;
   const hasItems = Array.isArray(layout.items) && layout.items.length > 0;
   state.currentSceneId = layout.id || sceneId;
   state.currentSceneName =
@@ -792,7 +826,7 @@ async function loadSceneById(sceneId) {
 
   clearSceneMedia();
   if (hasItems) {
-    await restoreLayoutItems(layout.items);
+    await restoreLayoutItems(layout.items, preloadedAssets);
   } else {
     state.items = [];
     state.selectedId = null;
@@ -1172,26 +1206,46 @@ function updateSceneUrl() {
 
 async function switchFinalScene(sceneId) {
   const token = (state.transitionToken += 1);
-  const ghost = createSceneGhost();
-  document.querySelector(".final-stage")?.classList.add("scene-is-loading");
-  setLayoutStatus("正在切换场景");
-  await loadSceneById(sceneId);
+  const layout = await fetchSceneLayout(sceneId);
+  if (!layout || token !== state.transitionToken) return;
+  setLayoutStatus("正在预加载下一场景");
+  const preloadedAssets = await preloadSceneAssets(layout);
+  if (token !== state.transitionToken) return;
+
+  pauseSceneMediaForTransition();
+  const stage = document.querySelector(".final-stage");
+  const ghost = createSceneGhost({ freeze: true });
+  setLayoutStatus("正在准备下一场景");
+  await delay(1000);
+  if (token !== state.transitionToken) {
+    ghost?.remove();
+    return;
+  }
+  stage?.classList.add("scene-is-loading");
+  await applySceneLayout(layout, sceneId, preloadedAssets);
+  if (token !== state.transitionToken) {
+    ghost?.remove();
+    return;
+  }
+  await waitForNextSceneVisualReady();
   if (token !== state.transitionToken) {
     ghost?.remove();
     return;
   }
   updateSceneUrl();
   requestAnimationFrame(() => {
-    document.querySelector(".final-stage")?.classList.remove("scene-is-loading");
+    stage?.classList.remove("scene-is-loading");
+    stage?.classList.add("scene-clarifying");
     ghost?.classList.add("fading");
-    window.setTimeout(() => ghost?.remove(), 880);
+    requestAnimationFrame(() => stage?.classList.remove("scene-clarifying"));
+    window.setTimeout(() => ghost?.remove(), 260);
   });
 }
 
-function createSceneGhost() {
+function createSceneGhost({ freeze = false } = {}) {
   if (!isFinal || !canvas.parentElement) return null;
   const ghost = document.createElement("div");
-  ghost.className = "scene-ghost";
+  ghost.className = `scene-ghost${freeze ? " frozen" : ""}`;
 
   const backdrop = document.createElement("img");
   backdrop.className = "scene-ghost-backdrop";
@@ -1200,6 +1254,18 @@ function createSceneGhost() {
   ghost.append(backdrop);
 
   state.gifElements.forEach((element) => {
+    if (freeze) {
+      const frame = document.createElement("canvas");
+      frame.className = "gif-pause-frame scene-ghost-gif-frame";
+      captureGifFrame(element, frame);
+      frame.style.width = element.style.width;
+      frame.style.height = element.style.height;
+      frame.style.transform = element.style.transform;
+      frame.style.zIndex = element.style.zIndex;
+      frame.style.opacity = element.style.opacity;
+      ghost.append(frame);
+      return;
+    }
     const clone = element.cloneNode(true);
     clone.classList.remove("paused");
     ghost.append(clone);
@@ -1209,20 +1275,199 @@ function createSceneGhost() {
   return ghost;
 }
 
-async function restoreLayoutItems(items) {
+function pauseSceneMediaForTransition() {
+  state.items.forEach((item) => {
+    if (item.mediaType === "video") item.media.pause?.();
+  });
+  ui.sceneAudio?.pause?.();
+}
+
+async function waitForNextSceneVisualReady() {
+  updateHead();
+  updateGifOverlays();
+  await nextAnimationFrame();
+  updateGifOverlays();
+  const gifImages = [...state.gifElements.values()].filter((element) => element.tagName === "IMG");
+  const gifReady = gifImages.map((image) => waitForImageElementReady(image));
+  const videosReady = state.items
+    .filter((item) => item.mediaType === "video")
+    .map((item) => waitForVideoItemReady(item.media));
+  await Promise.race([
+    Promise.allSettled([...gifReady, ...videosReady]),
+    delay(1800),
+  ]);
+}
+
+function nextAnimationFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+function waitForImageElementReady(image) {
+  if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      cleanup();
+      resolve();
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      image.removeEventListener("load", done);
+      image.removeEventListener("error", done);
+    };
+    const timer = setTimeout(done, 1500);
+    image.addEventListener("load", done, { once: true });
+    image.addEventListener("error", done, { once: true });
+  });
+}
+
+function waitForVideoItemReady(video) {
+  if (!video || video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      cleanup();
+      resolve();
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener("loadeddata", done);
+      video.removeEventListener("canplay", done);
+      video.removeEventListener("error", done);
+    };
+    const timer = setTimeout(done, 1500);
+    video.addEventListener("loadeddata", done, { once: true });
+    video.addEventListener("canplay", done, { once: true });
+    video.addEventListener("error", done, { once: true });
+  });
+}
+
+async function preloadSceneAssets(layout) {
+  const preloaded = new Map();
+  const records = Array.isArray(layout.items) ? layout.items : [];
+  await Promise.allSettled(records.map((record) => preloadSceneItem(record, preloaded)));
+  const audioAsset = normalizeSceneAudioAsset(layout.scene?.audioAsset);
+  if (audioAsset && isAudioAsset(audioAsset)) {
+    await preloadAudioAsset(audioAsset.url).catch(() => {});
+  }
+  return preloaded;
+}
+
+async function preloadSceneItem(record, preloaded) {
+  const asset = assetFromLayoutRecord(record);
+  if (!asset.url) return;
+  if (isVideoAsset(asset)) {
+    const video = await preloadVideoAsset(asset);
+    preloaded.set(asset.url, { type: "video", media: video });
+    return;
+  }
+  const image = await preloadImageAsset(asset.url);
+  preloaded.set(asset.url, { type: isGifAsset(asset) ? "gif" : "image", media: image });
+}
+
+function assetFromLayoutRecord(record) {
+  const url = record.assetUrl || record.src || "";
+  return {
+    key: record.assetKey,
+    name: record.name || decodeURIComponent(url.split("/").pop() || "asset"),
+    url,
+    type: record.assetType || inferAssetType(url),
+    size: 0,
+  };
+}
+
+function preloadImageAsset(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = async () => {
+      try {
+        await image.decode?.();
+      } catch {}
+      resolve(image);
+    };
+    image.onerror = reject;
+    image.src = url;
+  });
+}
+
+function preloadVideoAsset(asset) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    let settled = false;
+    const done = () => {
+      if (settled || !video.videoWidth || !video.videoHeight) return;
+      settled = true;
+      cleanup();
+      try {
+        video.currentTime = 0;
+      } catch {}
+      resolve(video);
+    };
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("video preload failed"));
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener("loadeddata", done);
+      video.removeEventListener("canplay", done);
+      video.removeEventListener("error", fail);
+    };
+    const timer = setTimeout(() => {
+      if (video.videoWidth && video.videoHeight) done();
+      else fail();
+    }, 7000);
+    video.muted = true;
+    video.loop = shouldLoopVideoAsset(asset);
+    video.playsInline = true;
+    video.preload = "auto";
+    video.addEventListener("loadeddata", done);
+    video.addEventListener("canplay", done);
+    video.addEventListener("error", fail);
+    video.src = asset.url;
+    video.load();
+  });
+}
+
+function preloadAudioAsset(url) {
+  return new Promise((resolve) => {
+    const audio = new Audio();
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      audio.removeEventListener("canplaythrough", done);
+      audio.removeEventListener("loadedmetadata", done);
+      audio.removeEventListener("error", done);
+    };
+    const timer = setTimeout(done, 4000);
+    audio.preload = "auto";
+    audio.addEventListener("canplaythrough", done);
+    audio.addEventListener("loadedmetadata", done);
+    audio.addEventListener("error", done);
+    audio.src = url;
+    audio.load();
+  });
+}
+
+async function restoreLayoutItems(items, preloadedAssets = new Map()) {
   clearSceneMedia();
   for (const record of items) {
-    const asset = {
-      key: record.assetKey,
-      name: record.name,
-      url: record.assetUrl || record.src,
-      type: record.assetType || inferAssetType(record.assetUrl || record.src),
-      size: 0,
-    };
+    const asset = assetFromLayoutRecord(record);
     if (!asset.url) continue;
 
     let item;
-    if (isVideoAsset(asset)) {
+    const preloaded = preloadedAssets.get(asset.url);
+    if (isVideoAsset(asset) && preloaded?.media) {
+      item = createReadyVideoItem(asset, preloaded.media);
+    } else if (!isVideoAsset(asset) && preloaded?.media) {
+      item = createReadyImageItem(asset, preloaded.media);
+    } else if (isVideoAsset(asset)) {
       item = createPendingVideoItem(asset);
       hydrateVideoItem(asset, item);
     } else {
@@ -2827,7 +3072,7 @@ async function runPendingAgeFeedback(flow) {
     },
     variables: state.userVariables,
   });
-  const reply = cue.reply || (flow.ageExtracted ? `那看来你没傻。${flow.user_age}岁，记住了。` : "不行，你必须告诉我年龄。");
+  const reply = cue.reply || makeT5LocalReply(flow.user_age, flow.ageExtracted);
   ui.voiceReply.textContent = reply;
   updateCaption(reply);
   const ttsPromise = speakReply(reply);
@@ -2901,10 +3146,37 @@ async function triggerKeywordSceneSwitch(text) {
 }
 
 function makeFinalReply(text, switched) {
+  if (state.ageRequired) {
+    const age = extractAgeFromText(text);
+    return makeT5LocalReply(age, Boolean(age));
+  }
   if (switched === "scene2") return "火。可以，但动作要快。";
   if (switched === "scene3") return "水更重要。先确认能不能喝。";
   if (switched) return "";
   return text ? "我听见了。继续说重点。" : "先说你的选择。";
+}
+
+function makeT5LocalReply(age, hasAge) {
+  const variants = hasAge
+    ? [
+        `${age}岁。行，脑子还在。`,
+        `${age}岁，看来没傻。`,
+        `说得清楚。${age}岁，暂时没问题。`,
+      ]
+    : [
+        "不行，你一定要说出年龄。",
+        "你不说，我没法判断你情况。",
+        "别绕开。年龄，说清楚。",
+      ];
+  return variants[Math.floor(Math.random() * variants.length)];
+}
+
+function extractAgeFromText(text) {
+  const value = String(text || "");
+  const direct = value.match(/(?:我)?\s*(?:今年)?\s*(\d{1,3})\s*(?:岁|歲|周岁|周歲|了)?/);
+  if (!direct) return null;
+  const age = Number(direct[1]);
+  return age >= 1 && age <= 120 ? age : null;
 }
 
 function makeLocalDirectorCue(text) {
@@ -3087,6 +3359,10 @@ function roundRectPath(x, y, width, height, radius) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function degreesToRadians(value) {

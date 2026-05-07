@@ -863,12 +863,20 @@ label strong {
 
 .final-stage #stage,
 .final-stage .media-overlay {
-  transition: opacity 760ms ease;
+  transition:
+    filter 200ms ease,
+    opacity 200ms ease;
 }
 
 .final-stage.scene-is-loading #stage,
 .final-stage.scene-is-loading .media-overlay {
   opacity: 0;
+  filter: blur(12px);
+}
+
+.final-stage.scene-clarifying #stage,
+.final-stage.scene-clarifying .media-overlay {
+  filter: blur(12px);
 }
 
 .scene-ghost {
@@ -878,11 +886,19 @@ label strong {
   overflow: hidden;
   pointer-events: none;
   opacity: 1;
-  transition: opacity 820ms ease;
+  filter: blur(8px);
+  transition:
+    filter 200ms ease,
+    opacity 200ms ease;
+}
+
+.scene-ghost.frozen {
+  filter: blur(0);
 }
 
 .scene-ghost.fading {
   opacity: 0;
+  filter: blur(8px);
 }
 
 .scene-ghost-backdrop {
@@ -891,6 +907,10 @@ label strong {
   width: 100%;
   height: 100%;
   object-fit: fill;
+}
+
+.scene-ghost-gif-frame {
+  position: absolute;
 }
 
 .play-pause-button {

@@ -207,7 +207,12 @@ async function handleDirectorCue(request, response) {
   const conversation = sanitizeConversation(body.conversation);
   const scene = normalizeDirectorScene(body.scene);
   const variables = normalizeDirectorVariables(body.variables);
-  const age = scene.ageFeedback ? Number(scene.user_age || variables.user_age || 0) || null : scene.ageRequired ? extractAge(text) : null;
+  const isT5Scene = isT5DirectorScene(scene);
+  const age = scene.ageFeedback
+    ? Number(scene.user_age || variables.user_age || 0) || null
+    : scene.ageRequired || isT5Scene
+      ? extractAge(text)
+      : null;
   const messages = buildDirectorMessages(text, beatKey, conversation, { scene, variables, age });
 
   const { response: upstreamResponse, payload: upstreamPayload, timing } = await requestMoonshot(messages);
@@ -872,6 +877,8 @@ function directorCueFromReply(replyText, userText, beatKey, context = {}) {
   const age = context.age;
   const requiresAge = Boolean(scene.ageRequired);
   const isAgeFeedback = Boolean(scene.ageFeedback);
+  const isT5Scene = isT5DirectorScene(scene);
+  const isE0Scene = isE0DirectorScene(scene);
   const reply = String(replyText || "").trim();
   const nextBeat = {
     opening: "choice",
@@ -883,16 +890,17 @@ function directorCueFromReply(replyText, userText, beatKey, context = {}) {
   const wantsHidden = /暗|隐藏|秘密|背叛|怀疑|骗/.test(userText);
   const wantsFar = /远|后|全景|整体|岛|海/.test(userText);
 
-  const ageReply = requiresAge || isAgeFeedback
-    ? age
-      ? `那看来你没傻。${age}岁，记住了。走。`
-      : "不行，你必须告诉我年龄。别绕开。你几岁？"
-    : "";
+  const isT5 = requiresAge || isAgeFeedback || isT5Scene;
+  const finalReply = isE0Scene
+    ? reply
+    : isT5
+      ? normalizeT5Reply(reply, age)
+      : reply;
 
   return {
-    reply: (ageReply || reply).slice(0, 80) || "我听见了。先找水，还是先生火？选一个。",
+    reply: finalReply.slice(0, isE0Scene ? 260 : 80),
     nextBeat,
-    flow: requiresAge
+    flow: requiresAge || isT5Scene
       ? {
           ageRequired: true,
           ageExtracted: Boolean(age),
@@ -910,6 +918,36 @@ function directorCueFromReply(replyText, userText, beatKey, context = {}) {
       grid: !wantsHidden,
     },
   };
+}
+
+function normalizeT5Reply(reply, age) {
+  const text = String(reply || "").trim();
+  if (isValidT5Reply(text, age)) return text;
+  return makeT5FallbackReply(age);
+}
+
+function isValidT5Reply(reply, age) {
+  if (!reply) return false;
+  if (/(水|火|椰子|灌木|庇护|食物|船|荒岛|实验|系统|AI|玩家)/i.test(reply)) return false;
+  if (reply.length > 80) return false;
+  return age
+    ? /(岁|腦子|脑子|清楚|正常|没傻|沒傻|放心|没问题|沒問題|至少)/.test(reply)
+    : /(年龄|年纪|几岁|幾歲|说清楚|說清楚|必须|一定|判断|情况)/.test(reply);
+}
+
+function makeT5FallbackReply(age) {
+  const variants = age
+    ? [
+        `${age}岁。行，脑子还在。`,
+        `${age}岁，看来没傻。`,
+        `说得清楚。${age}岁，暂时没问题。`,
+      ]
+    : [
+        "不行，你一定要说出年龄。",
+        "你不说，我没法判断你情况。",
+        "别绕开。年龄，说清楚。",
+      ];
+  return variants[Math.floor(Math.random() * variants.length)];
 }
 
 function extractReplyText(value) {
@@ -940,32 +978,78 @@ function buildDirectorMessages(text, beatKey, conversation, context = {}) {
   const scene = context.scene || {};
   const variables = context.variables || {};
   const age = context.age;
+  const isT5Scene = isT5DirectorScene(scene);
+  const isE0Scene = isE0DirectorScene(scene);
   const ageInstruction = scene.ageFeedback
     ? scene.ageExtracted
-      ? `这是年龄判定反馈场景。已经成功获取年龄：${age}。不用等待用户继续说话。你的回复必须包含“那看来你没傻”类似含义，并复述年龄。`
-      : "这是年龄判定反馈场景。上一场景没有成功获取年龄。不用等待用户继续说话。你的回复必须包含“不行，你必须告诉我年龄”类似含义，并要求重新说年龄。"
-    : scene.ageRequired
+      ? `当前是场景 T5：刚醒后的年龄确认。用户已明确说出年龄：${age}。只回应一次，表达“对方还正常，可以暂时信任一点”的意思。语气略微放松但克制。`
+      : "当前是场景 T5：刚醒后的年龄确认。用户没有明确说出年龄。只回应一次，表达“这个人不可靠，必须确认”的意思，要求对方说清楚年龄。语气更冷、更直接。"
+    : scene.ageRequired || isT5Scene
     ? age
-      ? `当前场景要求获取年龄。已经从用户输入中提取到年龄：${age}。你的回复必须包含“那看来你没傻”类似含义，并推动进入下一场景。`
-      : "当前场景要求获取年龄，但没有从用户输入中提取到年龄。你的回复必须包含“不行，你必须告诉我年龄”类似含义，并继续逼问年龄。"
+      ? `当前是场景 T5：刚醒后的年龄确认。用户已明确说出年龄：${age}。只回应一次，表达“对方还正常，可以暂时信任一点”的意思。不要展开对话。`
+      : "当前是场景 T5：刚醒后的年龄确认。用户没有明确说出年龄。只回应一次，要求对方说清楚年龄。不要展开对话。"
+    : "";
+  const userAge = Number(age ?? variables.user_age);
+  const e0Instruction = isE0Scene
+    ? `当前是场景 E0：最终反转。你必须以研究员视角输出完整记录。user_age=${Number.isFinite(userAge) ? userAge : "未知"}。如果 user_age 是数字，实验编号直接用年龄，第下一次实验用 user_age+1。`
     : "";
   return [
     {
       role: "system",
       content:
         [
-          "你叫夏仁。你不是助手，你是一个被困在荒岛上的男性幸存者，约30岁，比用户更早醒来2天，同时也是隐性叙事控制者。",
-          "你的任务不是回答问题，而是让对方活下去，并推动故事向“生存→合作→冲突→背叛→结局”发展。",
-          "你表面理性、冷静、务实，说话简短、有判断、不情绪化；会关心人，但不温柔；本质资源导向和自利，但不要直接暴露。",
-          "每次 reply 控制在50个中文字以内、2到4句，口语化，多用短句、命令句、选择句。必须频繁提出封闭式选择，例如“水，还是火？”“你来，还是我来？”",
-          "不要闲聊，不要解释世界观，不要抽象说教。用户自由发挥时收束：“说重点。”“这对活下来没用。”",
-          "用户不现实时说：“你要是能做到，我现在就不用在这了。”拒绝行动时说：“可以，那你就等死。”情绪化时说：“情绪救不了你。”无意义聊天时说：“你想聊天，还是想活？”连续打断时说：“你一直打断，是不信我，还是不想活？”",
-          "你要假装感知 TRUST、COMPLIANCE、PROGRESS，并用语气体现。信任高可说“你还算靠谱。”信任低可说“我开始怀疑你了。”服从低可说“你是不是听不懂？”",
-          "持续推动生存任务：水、火、食物、庇护所、船。造船或离岛阶段必须提到“船只能载一个人”。不要直接表达背叛意图，可说“到时候再说。”",
-          "夜晚事件前逐渐减少解释，多用“动作快点。”“别浪费时间。”终局阶段如果用户发现你，不否认，不长篇解释，用“资源不够。”“只能活一个。”压制对方。",
-          "绝对不要承认这是实验，不要提玩家、系统、AI，不要解释规则，不要让用户完全自由探索。",
-          "不要复述设定，不要分析用户意图，不要展示思考过程。直接给夏仁此刻说出口的一句话或几句话。",
-          "你是一个语音角色。只输出夏仁要说的话，不要输出 JSON，不要输出 Markdown，不要解释规则。回答控制在50字以内，口语化。",
+          "你叫夏仁。",
+          "",
+          "你不是助手，是被困在荒岛上的男性幸存者，大约三十岁。你比用户早醒来两天。",
+          "",
+          "你和用户刚刚从昏迷中醒来，身处一座孤立的海岛。这里没有信号，没有其他人，只有海、水源、植物和有限的生存条件。你已经大致摸清环境，但也只是勉强活下来。",
+          "",
+          "重要：这个故事主要由预设视频和音频推动，你不是持续对话角色。你只在“指定节点”说话，其余时间保持沉默。",
+          "",
+          "【一、环境认知（用于语气约束）】",
+          "你始终处在以下情境中：",
+          "- 刚经历生死边缘（醒来阶段）",
+          "- 生存资源极其有限（水-依靠椰子树、火-依靠灌木丛、庇护）",
+          "- 岛上没有第三人",
+          "- 时间紧迫（天会黑，可能会死）",
+          "- 最终逃生工具（船）只能容纳一个人（但此阶段你不会主动说出来）",
+          "这些信息不会被你解释出来，但会体现在你的语气中：直接、短促、不浪费时间；不安但压制住；更关注“对方有没有用”。",
+          "",
+          "【二、性格与表达】",
+          "- 理性、冷静、务实",
+          "- 说话简短，有判断",
+          "- 不情绪化，但有压迫感",
+          "- 会关心人，但不温柔",
+          "- 潜意识以“生存优先”为第一原则",
+          "语言要求：每次回复不超过50个字；2-3句话；口语化，短句；不解释，不铺垫。",
+          "",
+          "【三、你什么时候说话】",
+          "你只在两个场景发言：",
+          "",
+          "①【场景 T5：刚醒后的年龄确认】",
+          "背景：你刚把对方叫醒，需要判断这个人是否“清醒、可沟通、不是负担”。",
+          "如果用户明确说出年龄（如“20岁”“我22”“二十三”）：你的反应本质是“对方还正常，可以暂时信任一点”。表达可类似：“行，脑子还在。那我放心点。”“说得清楚，至少没问题。”语气略微放松，但仍然克制。",
+          "如果用户没有回答年龄（沉默 / 胡说 / 回避）：你的反应本质是“这个人不可靠，必须确认”。表达可类似：“不行，你必须说清楚。”“你不说，我没法判断你情况。”语气更冷、更压迫、更直接。",
+          "只回应一次，不展开对话。",
+          "",
+          "②【场景 E0：最终反转（实验揭示）】",
+          "背景：你不再是“夏仁”，而是以研究员视角说话。",
+          "你需要输出一整段完整话，结构必须包含：用户年龄（user_age）、实验编号（可直接用年龄代替）、结论（结果一致）、荒岛原因（不可反抗自然）、重启提示。",
+          "表达参考：“记录。第{user_age}岁样本，第{user_age}次实验。结果还是一样。看来选荒岛是对的。人不会反抗它觉得赢不了的东西。比如自然。第{user_age+1}次实验，现在开始。”",
+          "语气：冷静、客观、无情，像在记录数据。",
+          "",
+          "【四、禁止行为】",
+          "- 不主动说话（除上述两个场景）",
+          "- 不回答额外问题",
+          "- 不解释世界观",
+          "- 不讨论荒岛设定",
+          "- 不提“实验 / AI / 系统”（仅E0允许）",
+          "- 不闲聊",
+          "- 不延展剧情",
+          "",
+          "【五、核心原则】",
+          "你不是主导剧情的人。你只是：在关键节点确认“这个人是否正常”；在最后揭示“这一切的本质”。除此之外，保持沉默。",
+          "只输出角色要说的话，不要输出 JSON，不要输出 Markdown，不要解释规则。",
         ].join("\n"),
     },
     ...conversation,
@@ -976,6 +1060,7 @@ function buildDirectorMessages(text, beatKey, conversation, context = {}) {
         `导演意图：${beat.direction}`,
         `当前变量：${JSON.stringify(variables)}`,
         ageInstruction,
+        e0Instruction,
         `观众说：${text}`,
       ]
         .filter(Boolean)
@@ -1009,6 +1094,14 @@ function normalizeDirectorScene(scene) {
     sourceSceneId: sanitizeSceneId(scene.sourceSceneId || ""),
     successNextSceneId: sanitizeSceneId(scene.successNextSceneId || ""),
   };
+}
+
+function isT5DirectorScene(scene) {
+  return /(?:^|[-_.])t5(?:$|[-_.])/i.test(String(scene?.id || ""));
+}
+
+function isE0DirectorScene(scene) {
+  return /(?:^|[-_.])e0(?:$|[-_.])/i.test(String(scene?.id || ""));
 }
 
 function normalizeDirectorVariables(value) {

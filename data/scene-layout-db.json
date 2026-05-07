@@ -174,22 +174,22 @@
         },
         "items": [
           {
-            "id": "145b1d2d-fb37-4e1e-8dce-2f5232f25daa",
-            "name": "A1-1.gif",
-            "assetKey": "uploads/A1-1.gif",
-            "assetUrl": "/uploads/A1-1.gif",
-            "assetType": "image/gif",
+            "id": "e227c2ff-f7d2-4582-b128-5d3da235c9ff",
+            "name": "A1-1.mov",
+            "assetKey": "uploads/A1-1.mov",
+            "assetUrl": "/uploads/A1-1.mov",
+            "assetType": "video/quicktime",
             "x": 0,
             "y": 0,
             "z": 136.8,
-            "scale": 2.113,
+            "scale": 1.2990000000000002,
             "rotation": 0,
             "tilt": 0,
             "alpha": 1
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:22:56.550Z"
+      "updatedAt": "2026-05-07T16:19:04.896Z"
     },
     "w1-mos8b1bn": {
       "name": "W1",
@@ -216,7 +216,7 @@
             "routes": []
           },
           "xfyunVoice": "x6_lingfeiyi_pro",
-          "ageRequired": true,
+          "ageRequired": false,
           "realtimeReply": false
         },
         "items": [
@@ -228,7 +228,7 @@
             "assetType": "video/webm",
             "x": 0,
             "y": 38.400000000000034,
-            "z": -129.37499942779542,
+            "z": -260,
             "scale": 1.3360000000000003,
             "rotation": 0,
             "tilt": 0,
@@ -264,7 +264,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:25:03.366Z"
+      "updatedAt": "2026-05-07T15:44:26.123Z"
     },
     "w2-mos8j183": {
       "name": "W2",
@@ -1609,28 +1609,28 @@
               }
             ]
           },
-          "xfyunVoice": "x6_lingfeiyi_pro",
+          "xfyunVoice": "x6_lingbosong_pro",
           "ageRequired": false,
           "realtimeReply": true
         },
         "items": [
           {
-            "id": "01d5a9b7-690b-4c3c-bae5-d2edf42d1ec4",
-            "name": "E0_实验室循环.gif",
-            "assetKey": "uploads/E0_实验室循环.gif",
-            "assetUrl": "/uploads/E0_实验室循环.gif",
-            "assetType": "image/gif",
-            "x": 190,
+            "id": "4a0801c9-9fce-4e29-803d-d206dba6c4eb",
+            "name": "E0-1.webm",
+            "assetKey": "uploads/E0-1.webm",
+            "assetUrl": "/uploads/E0-1.webm",
+            "assetType": "video/webm",
+            "x": 0,
             "y": 0,
-            "z": -198,
-            "scale": 2.4829999999999997,
+            "z": -74,
+            "scale": 1.447,
             "rotation": 0,
-            "tilt": -0.2879793265790644,
+            "tilt": 0,
             "alpha": 1
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:26:36.148Z"
+      "updatedAt": "2026-05-07T16:28:11.830Z"
     },
     "y3-mouapwaz": {
       "name": "Y3",
@@ -2286,17 +2286,17 @@
           "parallax": 74,
           "showGrid": false,
           "audioAsset": {
-            "key": "uploads/W2-1.mp3",
-            "name": "W2-1.mp3",
-            "url": "/uploads/W2-1.mp3",
+            "key": "uploads/W3-1.mp3",
+            "name": "W3-1.mp3",
+            "url": "/uploads/W3-1.mp3",
             "type": "audio/mpeg",
-            "size": 107465
+            "size": 163054
           },
           "audioLoop": false,
           "gifLoop": false,
           "webmLoop": false,
           "flow": {
-            "mode": "none",
+            "mode": "auto",
             "nextSceneId": "t2-motyjdhn",
             "routes": []
           },
@@ -2321,7 +2321,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:09:00.604Z"
+      "updatedAt": "2026-05-07T15:56:05.269Z"
     },
     "t6-1-moubdhot": {
       "name": "T6-1",
@@ -2405,7 +2405,7 @@
           "webmLoop": false,
           "flow": {
             "mode": "dialog",
-            "nextSceneId": "s0-1-s-mou1ivfc",
+            "nextSceneId": "t6-2-moublunl",
             "routes": [
               {
                 "keywords": "岁",
@@ -2418,41 +2418,41 @@
             ]
           },
           "xfyunVoice": "x6_lingfeiyi_pro",
-          "ageRequired": false,
-          "realtimeReply": false
+          "ageRequired": true,
+          "realtimeReply": true
         },
         "items": [
           {
-            "id": "2594fa44-bcb6-40a6-b572-992a94a3729a",
-            "name": "1_副本.gif",
-            "assetKey": "uploads/1_副本.gif",
-            "assetUrl": "/uploads/1_副本.gif",
-            "assetType": "image/gif",
-            "x": 31.200000000000045,
-            "y": 6.399999999999977,
-            "z": -120,
-            "scale": 2.113,
-            "rotation": -0.03665191429188097,
-            "tilt": -0.2879793265790644,
+            "id": "959c2e0b-5681-46ed-abad-e8bb6d8597e3",
+            "name": "T5-2.webm",
+            "assetKey": "uploads/T5-2.webm",
+            "assetUrl": "/uploads/T5-2.webm",
+            "assetType": "video/webm",
+            "x": 145.60000000000002,
+            "y": 25.600000000000023,
+            "z": 397.20000000000005,
+            "scale": 1.188,
+            "rotation": 0,
+            "tilt": 0,
             "alpha": 1
           },
           {
-            "id": "8e4fcac4-f419-4d05-9f93-5088c04395f4",
-            "name": "2-5.gif",
-            "assetKey": "uploads/2-5.gif",
-            "assetUrl": "/uploads/2-5.gif",
-            "assetType": "image/gif",
-            "x": 143.66183172046925,
-            "y": 16.431220026961682,
+            "id": "216d6b97-f255-4b21-ba4c-75bfade88042",
+            "name": "T5-1-1.webm",
+            "assetKey": "uploads/T5-1-1.webm",
+            "assetUrl": "/uploads/T5-1-1.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 38.400000000000034,
             "z": 60,
-            "scale": 2.594,
+            "scale": 1.0030000000000001,
             "rotation": 0,
-            "tilt": -0.09599310885968812,
+            "tilt": 0,
             "alpha": 1
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:19:55.530Z"
+      "updatedAt": "2026-05-07T16:32:04.363Z"
     },
     "t6-2-moublunl": {
       "name": "T6-2",
