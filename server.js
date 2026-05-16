@@ -4,8 +4,6 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const rootDir = __dirname;
-const distDir = path.join(rootDir, "dist");
-const host = process.env.HOST || "127.0.0.1";
 const port = Number(process.env.PORT || 5174);
 const moonshotApiKey = process.env.MOONSHOT_API_KEY || "";
 const moonshotBaseUrl = process.env.MOONSHOT_BASE_URL || "https://api.moonshot.cn/v1";
@@ -407,15 +405,16 @@ async function requestMoonshot(messages) {
 async function serveStaticFile(pathname, request, response) {
   const cleanPath = decodeURIComponent(pathname.split("?")[0]);
   const relativePath = cleanPath === "/" ? "index.html" : cleanPath.replace(/^\/+/, "");
-  const staticFile = await resolveStaticFile(relativePath);
+  const filePath = path.resolve(rootDir, relativePath);
+  const relativeToRoot = path.relative(rootDir, filePath);
 
-  if (!staticFile) {
+  if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
     sendJson(response, 403, { error: "forbidden" });
     return;
   }
 
-  const { filePath, stat } = staticFile;
-  if (!stat) {
+  const stat = await fs.promises.stat(filePath).catch(() => null);
+  if (!stat || !stat.isFile()) {
     sendJson(response, 404, { error: "not_found" });
     return;
   }
@@ -465,23 +464,6 @@ async function serveStaticFile(pathname, request, response) {
   fs.createReadStream(filePath).pipe(response);
 }
 
-async function resolveStaticFile(relativePath) {
-  const roots = [distDir, rootDir];
-
-  for (const baseDir of roots) {
-    const filePath = path.resolve(baseDir, relativePath);
-    const relativeToBase = path.relative(baseDir, filePath);
-
-    if (relativeToBase.startsWith("..") || path.isAbsolute(relativeToBase)) {
-      return null;
-    }
-
-    const stat = await fs.promises.stat(filePath).catch(() => null);
-    if (stat?.isFile()) return { filePath, stat };
-  }
-
-  return { filePath: "", stat: null };
-}
 
 function readJsonBody(request, maxBytes) {
   return new Promise((resolve, reject) => {
