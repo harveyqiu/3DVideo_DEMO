@@ -2,10 +2,9 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 
 const rootDir = __dirname;
-const distDir = path.join(rootDir, "dist");
-const host = process.env.HOST || "127.0.0.1";
 const port = Number(process.env.PORT || 5174);
 const moonshotApiKey = process.env.MOONSHOT_API_KEY || "";
 const moonshotBaseUrl = process.env.MOONSHOT_BASE_URL || "https://api.moonshot.cn/v1";
@@ -47,6 +46,11 @@ const mimeTypes = {
 };
 
 const mediaExtensions = new Set([".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"]);
+const compressibleExtensions = new Set([".html", ".js", ".css", ".json", ".txt"]);
+
+function staticCacheControl(ext) {
+  return mediaExtensions.has(ext) ? "public, max-age=31536000" : "no-cache";
+}
 
 const scriptBeats = {
   opening: {
@@ -407,18 +411,23 @@ async function requestMoonshot(messages) {
 async function serveStaticFile(pathname, request, response) {
   const cleanPath = decodeURIComponent(pathname.split("?")[0]);
   const relativePath = cleanPath === "/" ? "index.html" : cleanPath.replace(/^\/+/, "");
-  const staticFile = await resolveStaticFile(relativePath);
+  const filePath = path.resolve(rootDir, relativePath);
+  const relativeToRoot = path.relative(rootDir, filePath);
 
-  if (!staticFile) {
+  if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
     sendJson(response, 403, { error: "forbidden" });
     return;
   }
 
-  const { filePath, stat } = staticFile;
-  if (!stat) {
+  const stat = await fs.promises.stat(filePath).catch(() => null);
+  if (!stat || !stat.isFile()) {
     sendJson(response, 404, { error: "not_found" });
     return;
   }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeType = mimeTypes[ext] || "application/octet-stream";
+  const cacheControl = staticCacheControl(ext);
 
   const range = request.headers.range;
   if (range) {
@@ -436,11 +445,11 @@ async function serveStaticFile(pathname, request, response) {
       return;
     }
     response.writeHead(206, {
-      "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "Content-Type": mimeType,
       "Content-Length": end - start + 1,
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store",
+      "Cache-Control": cacheControl,
     });
     if (request.method === "HEAD") {
       response.end();
@@ -450,11 +459,29 @@ async function serveStaticFile(pathname, request, response) {
     return;
   }
 
+  const acceptEncoding = request.headers["accept-encoding"] || "";
+  const canGzip = acceptEncoding.includes("gzip") && compressibleExtensions.has(ext);
+
+  if (canGzip) {
+    response.writeHead(200, {
+      "Content-Type": mimeType,
+      "Content-Encoding": "gzip",
+      "Cache-Control": cacheControl,
+      "Vary": "Accept-Encoding",
+    });
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
+    fs.createReadStream(filePath).pipe(zlib.createGzip()).pipe(response);
+    return;
+  }
+
   response.writeHead(200, {
-    "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+    "Content-Type": mimeType,
     "Content-Length": stat.size,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "no-store",
+    "Cache-Control": cacheControl,
   });
 
   if (request.method === "HEAD") {
@@ -465,23 +492,6 @@ async function serveStaticFile(pathname, request, response) {
   fs.createReadStream(filePath).pipe(response);
 }
 
-async function resolveStaticFile(relativePath) {
-  const roots = [distDir, rootDir];
-
-  for (const baseDir of roots) {
-    const filePath = path.resolve(baseDir, relativePath);
-    const relativeToBase = path.relative(baseDir, filePath);
-
-    if (relativeToBase.startsWith("..") || path.isAbsolute(relativeToBase)) {
-      return null;
-    }
-
-    const stat = await fs.promises.stat(filePath).catch(() => null);
-    if (stat?.isFile()) return { filePath, stat };
-  }
-
-  return { filePath: "", stat: null };
-}
 
 function readJsonBody(request, maxBytes) {
   return new Promise((resolve, reject) => {
