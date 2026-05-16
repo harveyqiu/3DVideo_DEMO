@@ -1,0 +1,9 @@
+.git
+.env
+node_modules
+dist
+data
+uploads
+mat
+*.log
+npm-debug.log*

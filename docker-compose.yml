@@ -1,0 +1,22 @@
+services:
+  app:
+    build:
+      context: .
+      secrets:
+        - app_env
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5174
+      NODE_ENV: production
+    ports:
+      - "80:5174"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+secrets:
+  app_env:
+    file: .env
