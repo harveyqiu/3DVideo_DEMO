@@ -104,20 +104,22 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  ensureDatabase();
-  console.log(`3DVideo_DEMO running at http://127.0.0.1:${port}/`);
+  ensureDatabase()
+    .then(() => console.log(`3DVideo_DEMO running at http://127.0.0.1:${port}/`))
+    .catch((error) => {
+      console.error("Failed to initialize database:", error);
+      process.exit(1);
+    });
 });
 
 async function handleLayout(request, response, url) {
-  ensureDatabase();
-
   if (request.method === "GET") {
     if (url.searchParams.get("list") === "1") {
-      sendJson(response, 200, { scenes: listLayoutScenes(url.searchParams.get("details") === "1") });
+      sendJson(response, 200, { scenes: await listLayoutScenes(url.searchParams.get("details") === "1") });
       return;
     }
     const id = sanitizeSceneId(url.searchParams.get("id") || "default");
-    const payload = readLayoutPayload(id);
+    const payload = await readLayoutPayload(id);
     sendJson(response, 200, payload || { id, name: id === "default" ? "默认场景" : id, items: [], scene: {} });
     return;
   }
@@ -126,7 +128,7 @@ async function handleLayout(request, response, url) {
     const body = await readJsonBody(request, 4 * 1024 * 1024);
     const id = sanitizeSceneId(body.id || url.searchParams.get("id") || "default");
     const name = id === "default" ? "默认场景" : sanitizeSceneName(body.name || body.sceneName || id);
-    writeLayoutPayload(id, name, body);
+    await writeLayoutPayload(id, name, body);
     sendJson(response, 200, { ok: true, id, name, savedAt: new Date().toISOString() });
     return;
   }
@@ -135,16 +137,14 @@ async function handleLayout(request, response, url) {
 }
 
 async function handleSettings(request, response) {
-  ensureDatabase();
-
   if (request.method === "GET") {
-    sendJson(response, 200, { settings: readSettings() });
+    sendJson(response, 200, { settings: await readSettings() });
     return;
   }
 
   if (request.method === "POST") {
     const body = await readJsonBody(request, 32 * 1024);
-    const settings = writeSettings({
+    const settings = await writeSettings({
       finalStartSceneId: sanitizeSceneId(body.finalStartSceneId || "default"),
     });
     sendJson(response, 200, { ok: true, settings });
@@ -174,7 +174,7 @@ async function handleAssets(request, response, url) {
     const buffer = await readRawBody(request, 512 * 1024 * 1024);
     await fs.promises.writeFile(filePath, buffer);
 
-    sendJson(response, 200, assetFromFile(filePath, "uploads"));
+    sendJson(response, 200, await assetFromFile(filePath, "uploads"));
     return;
   }
 
@@ -501,15 +501,17 @@ function readRawBody(request, maxBytes) {
   });
 }
 
-function ensureDatabase() {
-  fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(dbPath)) {
-    fs.writeFileSync(dbPath, JSON.stringify({ layouts: {} }, null, 2), "utf8");
+async function ensureDatabase() {
+  await fs.promises.mkdir(dataDir, { recursive: true });
+  try {
+    await fs.promises.access(dbPath);
+  } catch {
+    await fs.promises.writeFile(dbPath, JSON.stringify({ layouts: {} }, null, 2), "utf8");
   }
 }
 
-function listLayoutScenes(includeDetails = false) {
-  const db = readDatabase();
+async function listLayoutScenes(includeDetails = false) {
+  const db = await readDatabase();
   return Object.entries(db.layouts || {})
     .map(([id, entry]) => ({
       id,
@@ -520,8 +522,8 @@ function listLayoutScenes(includeDetails = false) {
     .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
 }
 
-function readLayoutPayload(id = "default") {
-  const db = readDatabase();
+async function readLayoutPayload(id = "default") {
+  const db = await readDatabase();
   const entry = db.layouts?.[id];
   const raw = entry?.payload;
   if (!raw) return null;
@@ -532,26 +534,26 @@ function readLayoutPayload(id = "default") {
   }
 }
 
-function writeLayoutPayload(id, name, payload) {
-  const db = readDatabase();
+async function writeLayoutPayload(id, name, payload) {
+  const db = await readDatabase();
   db.layouts = db.layouts || {};
   db.layouts[id] = {
     name,
     payload: { ...payload, id, name },
     updatedAt: new Date().toISOString(),
   };
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8");
+  await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
 }
 
-function readSettings() {
-  const db = readDatabase();
+async function readSettings() {
+  const db = await readDatabase();
   return normalizeSettings(db.settings, db.layouts);
 }
 
-function writeSettings(nextSettings) {
-  const db = readDatabase();
+async function writeSettings(nextSettings) {
+  const db = await readDatabase();
   db.settings = normalizeSettings({ ...db.settings, ...nextSettings }, db.layouts);
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8");
+  await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
   return db.settings;
 }
 
@@ -574,17 +576,18 @@ function sanitizeSceneName(value) {
   return String(value || "未命名场景").trim().slice(0, 80) || "未命名场景";
 }
 
-function readDatabase() {
-  ensureDatabase();
+async function readDatabase() {
+  await ensureDatabase();
   try {
-    const db = JSON.parse(fs.readFileSync(dbPath, "utf8"));
-    return normalizeDatabase(db);
+    const raw = await fs.promises.readFile(dbPath, "utf8");
+    const db = JSON.parse(raw);
+    return await normalizeDatabase(db);
   } catch {
     return { layouts: {} };
   }
 }
 
-function normalizeDatabase(db) {
+async function normalizeDatabase(db) {
   db.layouts = db.layouts || {};
   let changed = false;
   const normalizedSettings = normalizeSettings(db.settings, db.layouts);
@@ -623,7 +626,7 @@ function normalizeDatabase(db) {
   }
 
   if (changed) {
-    fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8");
+    await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
   }
   return db;
 }
@@ -669,13 +672,13 @@ async function collectAssetFiles(dir, base, files) {
     }
     const ext = path.extname(entry.name).toLowerCase();
     if (![".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"].includes(ext)) continue;
-    files.push(assetFromFile(fullPath, base));
+    files.push(await assetFromFile(fullPath, base));
   }
 }
 
-function assetFromFile(filePath, base) {
+async function assetFromFile(filePath, base) {
   const relative = path.relative(path.join(rootDir, base), filePath).split(path.sep).join("/");
-  const stat = fs.statSync(filePath);
+  const stat = await fs.promises.stat(filePath);
   const url = `/${base}/${relative}`;
   return {
     key: `${base}/${relative}`,
@@ -843,9 +846,14 @@ async function uniqueFilename(dir, filename) {
   const parsed = path.parse(filename);
   let candidate = filename;
   let index = 1;
-  while (fs.existsSync(path.join(dir, candidate))) {
-    candidate = `${parsed.name}-${index}${parsed.ext}`;
-    index += 1;
+  while (true) {
+    try {
+      await fs.promises.access(path.join(dir, candidate));
+      candidate = `${parsed.name}-${index}${parsed.ext}`;
+      index += 1;
+    } catch {
+      break;
+    }
   }
   return candidate;
 }

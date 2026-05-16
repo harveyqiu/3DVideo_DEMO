@@ -407,6 +407,15 @@ function bindEvents() {
     },
     { passive: false },
   );
+
+  window.addEventListener("pagehide", () => {
+    stopCamera({ silent: true });
+    stopMicLevelMonitor();
+    if (state.voice.recognition) {
+      state.voice.recognition.stop();
+      state.voice.recognition = null;
+    }
+  });
 }
 
 function resize() {
