@@ -470,16 +470,18 @@ async function addFiles(files) {
 function loadImageItemFromAsset(asset) {
   return new Promise((resolve, reject) => {
     const image = new Image();
+    const timer = setTimeout(() => reject(new Error("图片加载超时")), 15000);
     image.onload = () => {
+      clearTimeout(timer);
       const mediaType = isGifAsset(asset) ? "gif" : "image";
       const item = createItem(asset.name, asset.url, image, mediaType);
       item.status = mediaType === "gif" ? "GIF" : "图片";
-      item.assetKey = asset.key;
-      item.assetUrl = asset.url;
-      item.assetType = asset.type;
-      resolve(item);
+      resolve(assignAssetMeta(item, asset));
     };
-    image.onerror = reject;
+    image.onerror = (error) => {
+      clearTimeout(timer);
+      reject(error);
+    };
     image.src = asset.url;
   });
 }
@@ -488,20 +490,14 @@ function createPendingVideoItem(asset) {
   const item = createPlaceholderItem(asset.name, "视频加载中", "video");
   item.src = asset.url;
   item.objectUrl = asset.url;
-  item.assetKey = asset.key;
-  item.assetUrl = asset.url;
-  item.assetType = asset.type;
-  return item;
+  return assignAssetMeta(item, asset);
 }
 
 function createReadyImageItem(asset, image) {
   const mediaType = isGifAsset(asset) ? "gif" : "image";
   const item = createItem(asset.name, asset.url, image, mediaType);
   item.status = mediaType === "gif" ? "GIF" : "图片";
-  item.assetKey = asset.key;
-  item.assetUrl = asset.url;
-  item.assetType = asset.type;
-  return item;
+  return assignAssetMeta(item, asset);
 }
 
 function createReadyVideoItem(asset, video) {
@@ -513,10 +509,7 @@ function createReadyVideoItem(asset, video) {
   const item = createItem(asset.name, asset.url, video, "video");
   item.status = asset.name.toLowerCase().endsWith(".webm") ? "WebM" : "MOV";
   item.thumbnail = makeVideoThumbnail(video);
-  item.assetKey = asset.key;
-  item.assetUrl = asset.url;
-  item.assetType = asset.type;
-  return item;
+  return assignAssetMeta(item, asset);
 }
 
 function hydrateVideoItem(asset, item) {
@@ -618,6 +611,13 @@ function createItem(name, src, media, mediaType) {
     tilt: 0,
     alpha: 1,
   };
+}
+
+function assignAssetMeta(item, asset) {
+  item.assetKey = asset.key;
+  item.assetUrl = asset.url;
+  item.assetType = asset.type;
+  return item;
 }
 
 function createPlaceholderItem(name, status, mediaType) {
@@ -1352,7 +1352,12 @@ function waitForVideoItemReady(video) {
 async function preloadSceneAssets(layout) {
   const preloaded = new Map();
   const records = Array.isArray(layout.items) ? layout.items : [];
-  await Promise.allSettled(records.map((record) => preloadSceneItem(record, preloaded)));
+  const results = await Promise.allSettled(records.map((record) => preloadSceneItem(record, preloaded)));
+  results.forEach((result, i) => {
+    if (result.status === "rejected") {
+      console.warn(`[preload] 第 ${i + 1} 个素材加载失败：`, result.reason);
+    }
+  });
   const audioAsset = normalizeSceneAudioAsset(layout.scene?.audioAsset);
   if (audioAsset && isAudioAsset(audioAsset)) {
     await preloadAudioAsset(audioAsset.url).catch(() => {});
@@ -2717,10 +2722,11 @@ function updateMicLevel() {
   analyser.getByteTimeDomainData(samples);
   let sum = 0;
   let peak = 0;
-  for (const value of samples) {
-    const centered = (value - 128) / 128;
+  for (let i = 0; i < samples.length; i++) {
+    const centered = (samples[i] - 128) / 128;
     sum += centered * centered;
-    peak = Math.max(peak, Math.abs(centered));
+    const abs = centered < 0 ? -centered : centered;
+    if (abs > peak) peak = abs;
   }
   const rms = Math.sqrt(sum / samples.length);
   const level = Math.min(100, Math.max(rms * 420, peak * 120));

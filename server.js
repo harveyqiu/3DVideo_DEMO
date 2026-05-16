@@ -44,6 +44,8 @@ const mimeTypes = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+const mediaExtensions = new Set([".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"]);
+
 const scriptBeats = {
   opening: {
     title: "生存：醒来后的第一天",
@@ -163,7 +165,7 @@ async function handleAssets(request, response, url) {
   if (request.method === "POST") {
     const filename = sanitizeFilename(url.searchParams.get("filename") || "asset.bin");
     const ext = path.extname(filename).toLowerCase();
-    if (![".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"].includes(ext)) {
+    if (!mediaExtensions.has(ext)) {
       sendJson(response, 415, { error: "unsupported_media_type" });
       return;
     }
@@ -501,13 +503,19 @@ function readRawBody(request, maxBytes) {
   });
 }
 
+let dbInitPromise = null;
 async function ensureDatabase() {
-  await fs.promises.mkdir(dataDir, { recursive: true });
-  try {
-    await fs.promises.access(dbPath);
-  } catch {
-    await fs.promises.writeFile(dbPath, JSON.stringify({ layouts: {} }, null, 2), "utf8");
+  if (!dbInitPromise) {
+    dbInitPromise = (async () => {
+      await fs.promises.mkdir(dataDir, { recursive: true });
+      try {
+        await fs.promises.access(dbPath);
+      } catch {
+        await fs.promises.writeFile(dbPath, JSON.stringify({ layouts: {} }, null, 2), "utf8");
+      }
+    })();
   }
+  return dbInitPromise;
 }
 
 async function listLayoutScenes(includeDetails = false) {
@@ -582,7 +590,8 @@ async function readDatabase() {
     const raw = await fs.promises.readFile(dbPath, "utf8");
     const db = JSON.parse(raw);
     return await normalizeDatabase(db);
-  } catch {
+  } catch (error) {
+    console.error("[db] Failed to read database, returning empty state:", error);
     return { layouts: {} };
   }
 }
@@ -671,7 +680,7 @@ async function collectAssetFiles(dir, base, files) {
       continue;
     }
     const ext = path.extname(entry.name).toLowerCase();
-    if (![".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"].includes(ext)) continue;
+    if (!mediaExtensions.has(ext)) continue;
     files.push(await assetFromFile(fullPath, base));
   }
 }
@@ -690,30 +699,27 @@ async function assetFromFile(filePath, base) {
 }
 
 function getAssetType(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".png") return "image/png";
-  if (ext === ".gif") return "image/gif";
-  if (ext === ".mov") return "video/quicktime";
-  if (ext === ".webm") return "video/webm";
-  if (ext === ".mp4") return "video/mp4";
-  if (ext === ".mp3") return "audio/mpeg";
-  if (ext === ".wav") return "audio/wav";
-  if (ext === ".ogg") return "audio/ogg";
-  if (ext === ".m4a") return "audio/mp4";
-  if (ext === ".aac") return "audio/aac";
-  return "application/octet-stream";
+  return mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream";
 }
 
 function synthesizeXfyunTts(text, voice) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(buildXfyunAuthUrl(xfyunTtsUrl, xfyunApiKey, xfyunApiSecret));
     const chunks = [];
-    const timer = setTimeout(() => {
-      try {
-        ws.close();
-      } catch {}
-      reject(new Error("讯飞 TTS 请求超时"));
-    }, 30000);
+    let settled = false;
+
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch {}
+      fn(value);
+    };
+
+    const timer = setTimeout(
+      () => settle(reject, new Error("讯飞 TTS 请求超时")),
+      30000,
+    );
 
     ws.addEventListener("open", () => {
       ws.send(JSON.stringify(buildXfyunTtsPayload(text, voice)));
@@ -724,9 +730,7 @@ function synthesizeXfyunTts(text, voice) {
         const message = JSON.parse(String(event.data));
         const code = message.header?.code ?? 0;
         if (code !== 0) {
-          clearTimeout(timer);
-          ws.close();
-          reject(new Error(`讯飞 TTS 错误 ${code}: ${message.header?.message || "unknown"}`));
+          settle(reject, new Error(`讯飞 TTS 错误 ${code}: ${message.header?.message || "unknown"}`));
           return;
         }
 
@@ -739,26 +743,20 @@ function synthesizeXfyunTts(text, voice) {
         }
 
         if (message.header?.status === 2 || audio?.status === 2) {
-          clearTimeout(timer);
-          ws.close();
           chunks.sort((a, b) => a.seq - b.seq);
-          resolve(Buffer.concat(chunks.map((chunk) => chunk.buffer)));
+          settle(resolve, Buffer.concat(chunks.map((chunk) => chunk.buffer)));
         }
       } catch (error) {
-        clearTimeout(timer);
-        ws.close();
-        reject(error);
+        settle(reject, error);
       }
     });
 
     ws.addEventListener("error", () => {
-      clearTimeout(timer);
-      reject(new Error("讯飞 TTS WebSocket 连接失败"));
+      settle(reject, new Error("讯飞 TTS WebSocket 连接失败"));
     });
 
     ws.addEventListener("close", () => {
-      clearTimeout(timer);
-      if (!chunks.length) reject(new Error("讯飞 TTS 未返回音频"));
+      if (!settled && !chunks.length) settle(reject, new Error("讯飞 TTS 未返回音频"));
     });
   });
 }
