@@ -2,6 +2,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 
 const rootDir = __dirname;
 const port = Number(process.env.PORT || 5174);
@@ -45,6 +46,11 @@ const mimeTypes = {
 };
 
 const mediaExtensions = new Set([".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"]);
+const compressibleExtensions = new Set([".html", ".js", ".css", ".json", ".txt"]);
+
+function staticCacheControl(ext) {
+  return mediaExtensions.has(ext) ? "public, max-age=31536000" : "no-cache";
+}
 
 const scriptBeats = {
   opening: {
@@ -419,6 +425,10 @@ async function serveStaticFile(pathname, request, response) {
     return;
   }
 
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeType = mimeTypes[ext] || "application/octet-stream";
+  const cacheControl = staticCacheControl(ext);
+
   const range = request.headers.range;
   if (range) {
     const match = String(range).match(/^bytes=(\d*)-(\d*)$/);
@@ -435,11 +445,11 @@ async function serveStaticFile(pathname, request, response) {
       return;
     }
     response.writeHead(206, {
-      "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "Content-Type": mimeType,
       "Content-Length": end - start + 1,
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store",
+      "Cache-Control": cacheControl,
     });
     if (request.method === "HEAD") {
       response.end();
@@ -449,11 +459,29 @@ async function serveStaticFile(pathname, request, response) {
     return;
   }
 
+  const acceptEncoding = request.headers["accept-encoding"] || "";
+  const canGzip = acceptEncoding.includes("gzip") && compressibleExtensions.has(ext);
+
+  if (canGzip) {
+    response.writeHead(200, {
+      "Content-Type": mimeType,
+      "Content-Encoding": "gzip",
+      "Cache-Control": cacheControl,
+      "Vary": "Accept-Encoding",
+    });
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
+    fs.createReadStream(filePath).pipe(zlib.createGzip()).pipe(response);
+    return;
+  }
+
   response.writeHead(200, {
-    "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+    "Content-Type": mimeType,
     "Content-Length": stat.size,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "no-store",
+    "Cache-Control": cacheControl,
   });
 
   if (request.method === "HEAD") {
