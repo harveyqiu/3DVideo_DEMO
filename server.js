@@ -26,6 +26,7 @@ const xfyunVoiceOptions = new Set([
 const dataDir = path.join(rootDir, "data");
 const uploadsDir = path.join(rootDir, "uploads");
 const dbPath = path.join(dataDir, "scene-layout-db.json");
+const maxUploadBytes = 512 * 1024 * 1024;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -107,7 +108,12 @@ const server = http.createServer(async (request, response) => {
 
     await serveStaticFile(url.pathname, request, response);
   } catch (error) {
-    sendJson(response, 500, { error: "server_error", message: error.message });
+    if (response.writableEnded) return;
+    const status = error.statusCode || 500;
+    sendJson(response, status, {
+      error: error.code || (status === 413 ? "payload_too_large" : "server_error"),
+      message: error.message,
+    });
   }
 });
 
@@ -176,11 +182,20 @@ async function handleAssets(request, response, url) {
       sendJson(response, 415, { error: "unsupported_media_type" });
       return;
     }
+    const contentLength = Number(request.headers["content-length"] || 0);
+    if (contentLength > maxUploadBytes) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
 
     await fs.promises.mkdir(uploadsDir, { recursive: true });
     const finalName = await uniqueFilename(uploadsDir, filename);
     const filePath = path.join(uploadsDir, finalName);
-    const buffer = await readRawBody(request, 512 * 1024 * 1024);
+    const buffer = await readRawBody(request, maxUploadBytes);
+    if (!buffer.length) {
+      sendJson(response, 400, { error: "empty_upload" });
+      return;
+    }
     await fs.promises.writeFile(filePath, buffer);
 
     sendJson(response, 200, await assetFromFile(filePath, "uploads"));
@@ -437,9 +452,14 @@ async function serveStaticFile(pathname, request, response) {
       response.end();
       return;
     }
-    const start = match[1] ? Number(match[1]) : 0;
-    const end = match[2] ? Number(match[2]) : stat.size - 1;
-    if (start >= stat.size || end >= stat.size || start > end) {
+    let start = match[1] ? Number(match[1]) : 0;
+    let end = match[2] ? Number(match[2]) : stat.size - 1;
+    if (!match[1] && match[2]) {
+      const suffixLength = Number(match[2]);
+      start = Math.max(0, stat.size - suffixLength);
+      end = stat.size - 1;
+    }
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= stat.size || end >= stat.size || start > end) {
       response.writeHead(416, { "Content-Range": `bytes */${stat.size}` });
       response.end();
       return;
@@ -500,7 +520,10 @@ function readJsonBody(request, maxBytes) {
     request.on("data", (chunk) => {
       raw += chunk;
       if (Buffer.byteLength(raw, "utf8") > maxBytes) {
-        reject(new Error("Request body too large."));
+        const error = new Error("Request body too large.");
+        error.statusCode = 413;
+        error.code = "payload_too_large";
+        reject(error);
         request.destroy();
       }
     });
@@ -522,7 +545,10 @@ function readRawBody(request, maxBytes) {
     request.on("data", (chunk) => {
       size += chunk.length;
       if (size > maxBytes) {
-        reject(new Error("Request body too large."));
+        const error = new Error("Request body too large.");
+        error.statusCode = 413;
+        error.code = "payload_too_large";
+        reject(error);
         request.destroy();
         return;
       }
@@ -546,6 +572,11 @@ async function ensureDatabase() {
     })();
   }
   return dbInitPromise;
+}
+
+async function writeDatabase(db) {
+  await fs.promises.mkdir(dataDir, { recursive: true });
+  await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
 }
 
 async function listLayoutScenes(includeDetails = false) {
@@ -580,7 +611,7 @@ async function writeLayoutPayload(id, name, payload) {
     payload: { ...payload, id, name },
     updatedAt: new Date().toISOString(),
   };
-  await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
+  await writeDatabase(db);
 }
 
 async function readSettings() {
@@ -591,7 +622,7 @@ async function readSettings() {
 async function writeSettings(nextSettings) {
   const db = await readDatabase();
   db.settings = normalizeSettings({ ...db.settings, ...nextSettings }, db.layouts);
-  await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
+  await writeDatabase(db);
   return db.settings;
 }
 
@@ -665,7 +696,7 @@ async function normalizeDatabase(db) {
   }
 
   if (changed) {
-    await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
+    await writeDatabase(db);
   }
   return db;
 }
@@ -677,8 +708,34 @@ function normalizeLayoutPayload(raw, id, name) {
     id,
     name: id === "default" ? "默认场景" : name || payload.name || id,
     scene: payload.scene || {},
-    items: Array.isArray(payload.items) ? payload.items : [],
+    items: Array.isArray(payload.items) ? payload.items.filter(isPlainObject).map(normalizeLayoutItem) : [],
   };
+}
+
+function normalizeLayoutItem(item) {
+  const next = { ...item };
+  next.id = String(next.id || crypto.randomUUID());
+  next.name = String(next.name || next.assetKey || "asset").slice(0, 120);
+  next.assetUrl = String(next.assetUrl || next.src || "");
+  next.assetKey = String(next.assetKey || next.assetUrl || "");
+  next.assetType = String(next.assetType || "");
+  next.x = finiteNumber(next.x, 0);
+  next.y = finiteNumber(next.y, 0);
+  next.z = finiteNumber(next.z, 0);
+  next.scale = finiteNumber(next.scale, 1);
+  next.rotation = finiteNumber(next.rotation, 0);
+  next.tilt = finiteNumber(next.tilt, 0);
+  next.alpha = finiteNumber(next.alpha, 1);
+  return next;
+}
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function safeJsonParse(value) {

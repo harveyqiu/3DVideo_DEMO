@@ -291,3 +291,10 @@ curl https://your-domain.com/api/layout?list=1
 ### 修改场景后线上没有变化
 
 场景数据写在 `data/scene-layout-db.json`，上传素材写在 `uploads/`。部署或迁移时需要同步这两个目录；如果只更新代码，线上场景数据不会自动变化。
+
+## 维护备注
+
+- 前端场景下拉框、图层列表和场景关系面板应优先复用已有渲染 helper，避免在高频同步中重复绑定事件或重复查询 DOM。
+- 新增场景字段时，需要同时检查 `serializeLayout()`、`applySceneLayout()`、`normalizeLayoutPayload()` 和 viewer/final 的播放入口。
+- 新增媒体类型时，需要同步更新前端 `supportedMediaExtensions`、后端 `mediaExtensions`/`mimeTypes`，并确认浏览器是否能直接解码。
+- 场景文件和位置信息以 `/api/layout?list=1&details=1` 作为后续拼接调用入口，可一次读取所有场景的素材、坐标、循环和流转信息。
