@@ -158,10 +158,13 @@ async function handleSettings(request, response) {
   }
 
   if (request.method === "POST") {
-    const body = await readJsonBody(request, 32 * 1024);
-    const settings = await writeSettings({
-      finalStartSceneId: sanitizeSceneId(body.finalStartSceneId || "default"),
-    });
+    const body = await readJsonBody(request, 256 * 1024);
+    const nextSettings = {};
+    if (Object.hasOwn(body, "finalStartSceneId")) nextSettings.finalStartSceneId = sanitizeSceneId(body.finalStartSceneId);
+    if (Object.hasOwn(body, "activeSceneGroupId")) nextSettings.activeSceneGroupId = sanitizeSceneGroupId(body.activeSceneGroupId);
+    if (Object.hasOwn(body, "finalSceneGroupId")) nextSettings.finalSceneGroupId = sanitizeSceneGroupId(body.finalSceneGroupId);
+    if (Array.isArray(body.sceneGroups)) nextSettings.sceneGroups = body.sceneGroups;
+    const settings = await writeSettings(nextSettings);
     sendJson(response, 200, { ok: true, settings });
     return;
   }
@@ -627,10 +630,57 @@ async function writeSettings(nextSettings) {
 }
 
 function normalizeSettings(settings = {}, layouts = {}) {
-  const finalStartSceneId = sanitizeSceneId(settings.finalStartSceneId || "default");
+  const finalStartSceneId = layouts[sanitizeSceneId(settings.finalStartSceneId || "default")]
+    ? sanitizeSceneId(settings.finalStartSceneId || "default")
+    : "default";
+  const sceneGroups = normalizeSceneGroups(settings.sceneGroups, layouts, finalStartSceneId);
+  const activeSceneGroupId = sceneGroups.some((group) => group.id === settings.activeSceneGroupId)
+    ? settings.activeSceneGroupId
+    : sceneGroups[0].id;
+  const finalSceneGroupId = sceneGroups.some((group) => group.id === settings.finalSceneGroupId)
+    ? settings.finalSceneGroupId
+    : activeSceneGroupId;
   return {
-    finalStartSceneId: layouts[finalStartSceneId] ? finalStartSceneId : "default",
+    finalStartSceneId,
+    activeSceneGroupId,
+    finalSceneGroupId,
+    sceneGroups,
   };
+}
+
+function normalizeSceneGroups(groups, layouts, fallbackStartSceneId) {
+  const source = Array.isArray(groups) && groups.length
+    ? groups
+    : [{ id: "default-group", name: "默认场景组", finalStartSceneId: fallbackStartSceneId }];
+  const seen = new Set();
+  const normalized = source
+    .map((group, index) => {
+      const id = sanitizeSceneGroupId(group?.id || (index === 0 ? "default-group" : group?.name));
+      if (seen.has(id)) return null;
+      seen.add(id);
+      const startSceneId = sanitizeSceneId(group?.finalStartSceneId || group?.startSceneId || fallbackStartSceneId);
+      return {
+        id,
+        name: sanitizeSceneGroupName(group?.name || (id === "default-group" ? "默认场景组" : id)),
+        finalStartSceneId: layouts[startSceneId] ? startSceneId : fallbackStartSceneId,
+      };
+    })
+    .filter(Boolean);
+  return normalized.length
+    ? normalized
+    : [{ id: "default-group", name: "默认场景组", finalStartSceneId: fallbackStartSceneId }];
+}
+
+function sanitizeSceneGroupId(value) {
+  return String(value || "default-group")
+    .trim()
+    .replace(/[^\w\u4e00-\u9fa5.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "default-group";
+}
+
+function sanitizeSceneGroupName(value) {
+  return String(value || "默认场景组").trim().slice(0, 80) || "默认场景组";
 }
 
 function sanitizeSceneId(value) {

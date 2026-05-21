@@ -1,6 +1,7 @@
 const canvas = document.querySelector("#stage");
 const ctx = canvas.getContext("2d", { alpha: false });
 const appMode = document.body.dataset.mode || "editor";
+const isEditor = appMode === "editor";
 const isViewer = appMode === "viewer";
 const isFinal = appMode === "final";
 
@@ -10,6 +11,9 @@ const ui = {
   autoLayoutButton: document.querySelector("#autoLayoutButton"),
   saveLayoutButton: document.querySelector("#saveLayoutButton"),
   saveAsLayoutButton: document.querySelector("#saveAsLayoutButton"),
+  sceneGroupSelect: document.querySelector("#sceneGroupSelect"),
+  newSceneGroupButton: document.querySelector("#newSceneGroupButton"),
+  finalSceneGroupSelect: document.querySelector("#finalSceneGroupSelect"),
   sceneSelect: document.querySelector("#sceneSelect"),
   sceneNameInput: document.querySelector("#sceneNameInput"),
   finalStartSceneSelect: document.querySelector("#finalStartSceneSelect"),
@@ -101,6 +105,9 @@ const state = {
   pendingLayoutSaveSignature: "",
   currentSceneId: new URLSearchParams(window.location.search).get("scene") || "default",
   currentSceneName: "默认场景",
+  sceneGroups: [],
+  activeSceneGroupId: new URLSearchParams(window.location.search).get("group") || "default-group",
+  finalSceneGroupId: new URLSearchParams(window.location.search).get("group") || "default-group",
   finalStartSceneId: "default",
   scenes: [],
   loadingScene: true,
@@ -252,9 +259,20 @@ function bindEvents() {
   });
   ui.saveLayoutButton?.addEventListener("click", () => saveLayoutNow());
   ui.saveAsLayoutButton?.addEventListener("click", () => saveAsLayout());
+  ui.sceneGroupSelect?.addEventListener("change", async () => switchSceneGroup(ui.sceneGroupSelect.value));
+  ui.finalSceneGroupSelect?.addEventListener("change", async () => {
+    if (isFinal) {
+      await switchFinalSceneGroup(ui.finalSceneGroupSelect.value);
+      return;
+    }
+    state.finalSceneGroupId = ui.finalSceneGroupSelect.value || state.activeSceneGroupId;
+    await saveAppSettings();
+  });
+  ui.newSceneGroupButton?.addEventListener("click", () => createSceneGroup());
   ui.sceneSelect?.addEventListener("change", () => switchScene(ui.sceneSelect.value));
   ui.finalStartSceneSelect?.addEventListener("change", async () => {
     state.finalStartSceneId = ui.finalStartSceneSelect.value || "default";
+    updateActiveSceneGroup({ finalStartSceneId: state.finalStartSceneId });
     await saveAppSettings();
   });
   ui.xfyunVoiceSelect?.addEventListener("change", () => {
@@ -367,7 +385,7 @@ function bindEvents() {
     state.pointerHead.x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
     state.pointerHead.y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
 
-    if (!state.dragging) return;
+    if (!isEditor || !state.dragging) return;
     const selected = getSelected();
     if (!selected) return;
     canvas.classList.add("dragging");
@@ -381,6 +399,7 @@ function bindEvents() {
   });
 
   on(canvas, "pointerdown", (event) => {
+    if (!isEditor) return;
     const hit = hitTest(event);
     if (!hit) return;
     state.selectedId = hit.id;
@@ -408,6 +427,7 @@ function bindEvents() {
     canvas,
     "wheel",
     (event) => {
+      if (!isEditor) return;
       const selected = getSelected();
       if (!selected) return;
       event.preventDefault();
@@ -805,7 +825,7 @@ async function loadInitialScene() {
     await loadSceneList();
     await loadAppSettings();
     if (isFinal && !new URLSearchParams(window.location.search).has("scene")) {
-      state.currentSceneId = state.finalStartSceneId || state.currentSceneId;
+      state.currentSceneId = getFinalSceneGroup().finalStartSceneId || state.finalStartSceneId || state.currentSceneId;
     }
     syncSceneControls();
     const loaded = await loadSceneById(state.currentSceneId);
@@ -816,7 +836,7 @@ async function loadInitialScene() {
     state.loadingScene = false;
   }
 
-  if (!isViewer) {
+  if (isEditor) {
     seedDemoImages();
     syncSceneControls();
     syncControls();
@@ -907,8 +927,18 @@ async function loadAppSettings() {
     const response = await fetch("/api/settings");
     if (!response.ok) return;
     const payload = await response.json();
-    const sceneId = payload.settings?.finalStartSceneId || "default";
-    state.finalStartSceneId = hasScene(sceneId) ? sceneId : "default";
+    const settings = normalizeAppSettings(payload.settings);
+    state.sceneGroups = settings.sceneGroups;
+    state.activeSceneGroupId = settings.activeSceneGroupId;
+    state.finalSceneGroupId = settings.finalSceneGroupId;
+    const requestedGroup = new URLSearchParams(window.location.search).get("group");
+    if (requestedGroup && hasSceneGroup(requestedGroup)) state.activeSceneGroupId = requestedGroup;
+    state.finalStartSceneId = getActiveSceneGroup().finalStartSceneId;
+    if (isFinal) {
+      if (requestedGroup && hasSceneGroup(requestedGroup)) state.finalSceneGroupId = requestedGroup;
+      state.finalStartSceneId = getFinalSceneGroup().finalStartSceneId;
+    }
+    renderSceneGroupOptions();
     renderFinalStartSceneOptions();
   } catch {}
 }
@@ -918,30 +948,122 @@ async function saveAppSettings() {
     const response = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ finalStartSceneId: state.finalStartSceneId }),
+      body: JSON.stringify(serializeAppSettings()),
     });
     if (!response.ok) throw new Error("settings save failed");
-    setLayoutStatus(`Final 首场景已设置为：${getSceneLabel(state.finalStartSceneId)}`, "good");
+    setLayoutStatus(`场景组已保存：${getSceneGroupLabel(state.activeSceneGroupId)}`, "good");
   } catch {
-    setLayoutStatus("Final 首场景设置保存失败", "warn");
+    setLayoutStatus("场景组设置保存失败", "warn");
   }
+}
+
+function normalizeAppSettings(settings = {}) {
+  const fallbackStart = hasScene(settings.finalStartSceneId) ? settings.finalStartSceneId : "default";
+  const sceneGroups = normalizeSceneGroups(settings.sceneGroups, fallbackStart);
+  const activeSceneGroupId = hasSceneGroup(settings.activeSceneGroupId, sceneGroups)
+    ? settings.activeSceneGroupId
+    : sceneGroups[0].id;
+  const finalSceneGroupId = hasSceneGroup(settings.finalSceneGroupId, sceneGroups)
+    ? settings.finalSceneGroupId
+    : activeSceneGroupId;
+  return { sceneGroups, activeSceneGroupId, finalSceneGroupId };
+}
+
+function normalizeSceneGroups(groups, fallbackStartSceneId = "default") {
+  const source = Array.isArray(groups) && groups.length
+    ? groups
+    : [{ id: "default-group", name: "默认场景组", finalStartSceneId: fallbackStartSceneId }];
+  const seen = new Set();
+  const normalized = source
+    .map((group, index) => {
+      const id = makeSceneGroupId(group?.id || group?.name || (index === 0 ? "default-group" : "scene-group"));
+      if (seen.has(id)) return null;
+      seen.add(id);
+      const finalStartSceneId = hasScene(group?.finalStartSceneId) ? group.finalStartSceneId : fallbackStartSceneId;
+      return {
+        id,
+        name: String(group?.name || (id === "default-group" ? "默认场景组" : id)).trim() || "默认场景组",
+        finalStartSceneId,
+      };
+    })
+    .filter(Boolean);
+  return normalized.length
+    ? normalized
+    : [{ id: "default-group", name: "默认场景组", finalStartSceneId: fallbackStartSceneId }];
+}
+
+function serializeAppSettings() {
+  return {
+    finalStartSceneId: state.finalStartSceneId,
+    activeSceneGroupId: state.activeSceneGroupId,
+    finalSceneGroupId: state.finalSceneGroupId,
+    sceneGroups: state.sceneGroups,
+  };
 }
 
 function hasScene(sceneId) {
   return state.scenes.some((scene) => scene.id === sceneId);
 }
 
+function hasSceneGroup(groupId, groups = state.sceneGroups) {
+  return groups.some((group) => group.id === groupId);
+}
+
+function getActiveSceneGroup() {
+  return state.sceneGroups.find((group) => group.id === state.activeSceneGroupId) || state.sceneGroups[0] || {
+    id: "default-group",
+    name: "默认场景组",
+    finalStartSceneId: "default",
+  };
+}
+
+function getFinalSceneGroup() {
+  return state.sceneGroups.find((group) => group.id === state.finalSceneGroupId) || getActiveSceneGroup();
+}
+
+function getSceneGroupLabel(groupId) {
+  const group = state.sceneGroups.find((item) => item.id === groupId);
+  return group?.name || groupId;
+}
+
+function updateActiveSceneGroup(patch) {
+  state.sceneGroups = state.sceneGroups.map((group) =>
+    group.id === state.activeSceneGroupId ? { ...group, ...patch } : group,
+  );
+  const active = getActiveSceneGroup();
+  state.finalStartSceneId = active.finalStartSceneId || state.finalStartSceneId || "default";
+}
+
 function renderSceneOptions() {
   if (!ui.sceneSelect) return;
+  renderSceneGroupOptions();
   populateSceneSelect(ui.sceneSelect, { selected: state.currentSceneId });
   renderFinalStartSceneOptions();
   renderSceneFlowOptions();
 }
 
+function renderSceneGroupOptions() {
+  populateSceneGroupSelect(ui.sceneGroupSelect, state.activeSceneGroupId);
+  populateSceneGroupSelect(ui.finalSceneGroupSelect, state.finalSceneGroupId);
+}
+
 function renderFinalStartSceneOptions() {
   if (!ui.finalStartSceneSelect) return;
-  const selected = state.finalStartSceneId || ui.finalStartSceneSelect.value || "default";
+  const selected = getActiveSceneGroup().finalStartSceneId || state.finalStartSceneId || ui.finalStartSceneSelect.value || "default";
   populateSceneSelect(ui.finalStartSceneSelect, { selected: hasScene(selected) ? selected : "default" });
+}
+
+function populateSceneGroupSelect(select, selected = "") {
+  if (!select) return;
+  const fragment = document.createDocumentFragment();
+  state.sceneGroups.forEach((group) => {
+    const option = document.createElement("option");
+    option.value = group.id;
+    option.textContent = group.name;
+    fragment.append(option);
+  });
+  select.replaceChildren(fragment);
+  select.value = hasSceneGroup(selected) ? selected : state.sceneGroups[0]?.id || "";
 }
 
 function renderSceneFlowOptions() {
@@ -997,7 +1119,9 @@ function syncSceneControls() {
   syncSceneMediaControls();
   syncSceneFlowControls();
   const demo = document.querySelector(".demo-link");
-  if (demo) demo.href = `./viewer.html?scene=${encodeURIComponent(state.currentSceneId)}`;
+  if (demo) {
+    demo.href = `./viewer.html?scene=${encodeURIComponent(state.currentSceneId)}&group=${encodeURIComponent(state.activeSceneGroupId)}`;
+  }
 }
 
 function syncSceneFlowControls() {
@@ -1233,9 +1357,52 @@ async function switchScene(sceneId) {
   if (loaded || isViewer) updateSceneUrl();
 }
 
+async function switchSceneGroup(groupId) {
+  if (!hasSceneGroup(groupId)) return;
+  state.activeSceneGroupId = groupId;
+  const group = getActiveSceneGroup();
+  state.finalStartSceneId = hasScene(group.finalStartSceneId) ? group.finalStartSceneId : "default";
+  renderSceneGroupOptions();
+  renderFinalStartSceneOptions();
+  await saveAppSettings();
+  updateSceneUrl();
+  if (state.finalStartSceneId !== state.currentSceneId) await switchScene(state.finalStartSceneId);
+}
+
+async function switchFinalSceneGroup(groupId) {
+  if (!hasSceneGroup(groupId)) return;
+  state.finalSceneGroupId = groupId;
+  state.activeSceneGroupId = groupId;
+  state.finalStartSceneId = getFinalSceneGroup().finalStartSceneId || "default";
+  renderSceneGroupOptions();
+  await saveAppSettings();
+  updateSceneUrl();
+  await switchScene(state.finalStartSceneId);
+}
+
+async function createSceneGroup() {
+  if (!isEditor) return;
+  const name = window.prompt("请输入新场景组名称", "新场景组");
+  if (!name?.trim()) return;
+  const group = {
+    id: makeSceneGroupId(`${name}-${Date.now().toString(36)}`),
+    name: name.trim().slice(0, 80),
+    finalStartSceneId: state.currentSceneId || state.finalStartSceneId || "default",
+  };
+  state.sceneGroups = [...state.sceneGroups, group];
+  state.activeSceneGroupId = group.id;
+  state.finalSceneGroupId = group.id;
+  state.finalStartSceneId = group.finalStartSceneId;
+  renderSceneGroupOptions();
+  renderFinalStartSceneOptions();
+  await saveAppSettings();
+}
+
 function updateSceneUrl() {
   const url = new URL(window.location.href);
   url.searchParams.set("scene", state.currentSceneId);
+  const groupId = isFinal ? state.finalSceneGroupId : state.activeSceneGroupId;
+  if (groupId) url.searchParams.set("group", groupId);
   window.history.replaceState({}, "", url);
 }
 
@@ -1519,7 +1686,7 @@ async function restoreLayoutItems(items, preloadedAssets = new Map()) {
     applyLayoutRecord(item, record);
     state.items.push(item);
   }
-  state.selectedId = isViewer ? null : state.items[0]?.id ?? null;
+  state.selectedId = isEditor ? state.items[0]?.id ?? null : null;
   syncControls();
   renderLayerList();
 }
@@ -1609,7 +1776,7 @@ function getLayoutSaveSignature(payload = serializeLayout()) {
 }
 
 function scheduleSaveLayout() {
-  if (state.loadingScene || isViewer) return;
+  if (state.loadingScene || !isEditor) return;
   const signature = getLayoutSaveSignature();
   if (signature === state.lastLayoutSaveSignature && !state.layoutSaveTimer) return;
   state.pendingLayoutSaveSignature = signature;
@@ -1619,7 +1786,7 @@ function scheduleSaveLayout() {
 }
 
 async function saveLayoutNow() {
-  if (isViewer) return;
+  if (!isEditor) return;
   try {
     const payload = serializeLayout();
     const response = await fetch("/api/layout", {
@@ -1642,7 +1809,7 @@ async function saveLayoutNow() {
 }
 
 async function saveAsLayout() {
-  if (isViewer) return;
+  if (!isEditor) return;
   const name = window.prompt("请输入新场景名称", `${ui.sceneNameInput?.value || "新场景"} 副本`);
   if (!name) return;
   state.currentSceneId = makeSceneId(name);
@@ -1660,6 +1827,17 @@ function makeSceneId(name) {
       .replace(/^-+|-+$/g, "")
       .slice(0, 48) || "scene";
   return `${base}-${Date.now().toString(36)}`;
+}
+
+function makeSceneGroupId(name) {
+  return (
+    String(name || "default-group")
+      .trim()
+      .toLowerCase()
+      .replace(/[^\w\u4e00-\u9fa5.-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "default-group"
+  );
 }
 
 function setLayoutStatus(message, tone = "") {
@@ -1833,7 +2011,7 @@ function drawItem(item) {
     const projection = project(item);
     const w = getMediaWidth(item.media) * item.scale * projection.scale;
     const h = getMediaHeight(item.media) * item.scale * projection.scale;
-    if (item.id === state.selectedId && !isViewer) drawSelection(projection, w, h, item.rotation);
+    if (item.id === state.selectedId && isEditor) drawSelection(projection, w, h, item.rotation);
     return;
   }
   if (item.mediaType === "video" && item.media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -1863,7 +2041,7 @@ function drawItem(item) {
   ctx.globalAlpha = 1;
   ctx.restore();
 
-  if (selected && !isViewer) drawSelection(projection, w, h, item.rotation);
+  if (selected && isEditor) drawSelection(projection, w, h, item.rotation);
 }
 
 function drawSelection(projection, w, h, rotation) {
@@ -1900,7 +2078,7 @@ function updateGifOverlays() {
     element.style.zIndex = String(1000 + index);
     element.style.opacity = String(item.alpha);
     element.style.outline =
-      item.id === state.selectedId && !isViewer ? "2px dashed rgba(139,215,197,0.9)" : "0";
+      item.id === state.selectedId && isEditor ? "2px dashed rgba(139,215,197,0.9)" : "0";
     element.classList.toggle("paused", state.paused);
     syncGifPauseFrame(item.id, element);
     if (element.tagName === "CANVAS") advanceGifPlayer(item.id);

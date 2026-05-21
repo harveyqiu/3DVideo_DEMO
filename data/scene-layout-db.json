@@ -37,7 +37,7 @@
             "assetType": "image/gif",
             "x": 160,
             "y": -34,
-            "z": -215,
+            "z": -180.125,
             "scale": 1.119744,
             "rotation": 0,
             "tilt": 0.41887902047863906,
@@ -87,7 +87,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-16T09:05:25.170Z"
+      "updatedAt": "2026-05-21T16:38:28.442Z"
     },
     "场景3-morh6xmk": {
       "name": "场景3",
@@ -2519,6 +2519,6 @@
     }
   },
   "settings": {
-    "finalStartSceneId": "a1-mos899qj"
+    "finalStartSceneId": "default"
   }
 }
