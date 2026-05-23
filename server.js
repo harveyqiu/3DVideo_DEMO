@@ -85,6 +85,11 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname === "/api/tts-stream") {
+      await handleTtsStream(request, response);
+      return;
+    }
+
     if (url.pathname === "/api/layout") {
       await handleLayout(request, response, url);
       return;
@@ -331,6 +336,122 @@ async function handleTts(request, response) {
       message: error.message,
     });
   }
+}
+
+async function handleTtsStream(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "method_not_allowed" });
+    return;
+  }
+
+  if (!xfyunAppId || !xfyunApiKey || !xfyunApiSecret) {
+    sendJson(response, 503, {
+      error: "missing_xfyun_credentials",
+      message: "Server missing XFYUN_APP_ID, XFYUN_API_KEY or XFYUN_API_SECRET.",
+    });
+    return;
+  }
+
+  const body = await readJsonBody(request, 16 * 1024);
+  const text = cleanTtsText(typeof body.text === "string" ? body.text : "");
+  const voice = normalizeXfyunVoice(body.voice);
+  if (!text) {
+    sendJson(response, 400, { error: "invalid_request", message: "text is required." });
+    return;
+  }
+
+  response.writeHead(200, {
+    "Content-Type": "audio/mpeg",
+    "Transfer-Encoding": "chunked",
+    "Cache-Control": "no-store",
+    "X-TTS-Provider": "xfyun-super-smart-tts",
+    "X-TTS-Voice": voice,
+  });
+
+  try {
+    await synthesizeXfyunTtsToStream(text, voice, response);
+  } catch {
+    // Headers already sent; just close the stream
+  }
+  response.end();
+}
+
+// Streams Xfyun TTS audio chunks to writeStream in sequence as they arrive.
+// Uses a seq-keyed pending map to ensure correct order even if packets arrive out of order.
+function synthesizeXfyunTtsToStream(text, voice, writeStream) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(buildXfyunAuthUrl(xfyunTtsUrl, xfyunApiKey, xfyunApiSecret));
+    const pending = new Map();
+    let nextSeq = 0;
+    let settled = false;
+
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch {}
+      fn(value);
+    };
+
+    const timer = setTimeout(
+      () => settle(reject, new Error("讯飞 TTS 请求超时")),
+      15000,
+    );
+
+    function flushInOrder() {
+      while (pending.has(nextSeq)) {
+        const buf = pending.get(nextSeq);
+        pending.delete(nextSeq);
+        nextSeq++;
+        if (!writeStream.destroyed) writeStream.write(buf);
+      }
+    }
+
+    ws.addEventListener("open", () => {
+      ws.send(JSON.stringify(buildXfyunTtsPayload(text, voice)));
+    });
+
+    ws.addEventListener("message", (event) => {
+      try {
+        const message = JSON.parse(String(event.data));
+        const code = message.header?.code ?? 0;
+        if (code !== 0) {
+          settle(reject, new Error(`讯飞 TTS 错误 ${code}: ${message.header?.message || "unknown"}`));
+          return;
+        }
+
+        const audio = message.payload?.audio;
+        if (audio?.audio) {
+          const seq = Number(audio.seq ?? nextSeq);
+          pending.set(seq, Buffer.from(audio.audio, "base64"));
+          flushInOrder();
+        }
+
+        if (message.header?.status === 2 || audio?.status === 2) {
+          // Flush any remaining out-of-order chunks before resolving
+          const remaining = [...pending.entries()].sort((a, b) => a[0] - b[0]);
+          for (const [, buf] of remaining) {
+            if (!writeStream.destroyed) writeStream.write(buf);
+          }
+          settle(resolve);
+        }
+      } catch (error) {
+        settle(reject, error);
+      }
+    });
+
+    ws.addEventListener("error", () => {
+      settle(reject, new Error("讯飞 TTS WebSocket 连接失败"));
+    });
+
+    ws.addEventListener("close", () => {
+      if (!settled && !pending.size && nextSeq === 0) {
+        settle(reject, new Error("讯飞 TTS 未返回音频"));
+      } else if (!settled) {
+        settle(resolve);
+      }
+    });
+  });
 }
 
 async function requestMoonshot(messages) {
@@ -748,7 +869,7 @@ function synthesizeXfyunTts(text, voice) {
 
     const timer = setTimeout(
       () => settle(reject, new Error("讯飞 TTS 请求超时")),
-      30000,
+      15000,
     );
 
     ws.addEventListener("open", () => {

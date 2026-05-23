@@ -134,7 +134,7 @@ const state = {
     micAnalyser: null,
     micLevelTimer: null,
     micMonitoring: false,
-    minListenMs: 10000,
+    minListenMs: 3000,
     listenStartedAt: 0,
     listenStopTimer: null,
     manualStop: false,
@@ -2771,7 +2771,7 @@ function toggleVoiceListening() {
     state.voice.listenStartedAt = Date.now();
     ui.voiceButton.classList.add("active");
     ui.voiceButton.textContent = "停止聆听";
-    ui.voiceTranscript.textContent = "正在听，请说话。至少会听 10 秒。";
+    ui.voiceTranscript.textContent = "正在听，请说话。至少会听 3 秒。";
     setVoiceStatus("正在聆听观众说话", "listening");
     startMicLevelMonitor();
     clearTimeout(state.voice.listenStopTimer);
@@ -2836,7 +2836,7 @@ function getSpeechRecognition() {
     const elapsed = Date.now() - state.voice.listenStartedAt;
     if (state.voice.listening && !state.voice.manualStop && elapsed < state.voice.minListenMs) {
       state.voice.restartingRecognition = true;
-      setVoiceStatus("识别暂停，继续聆听到 10 秒", "listening");
+      setVoiceStatus("识别暂停，继续聆听中", "listening");
       setTimeout(() => {
         try {
           if (state.voice.listening && !state.voice.manualStop) recognition.start();
@@ -2913,11 +2913,11 @@ async function handleAudienceSpeech(text) {
         return;
       }
       const cue = await getDirectorCue(text);
-      await applyCueFlow(cue);
       const reply = cue.reply || makeFinalReply(text, switched);
       ui.voiceReply.textContent = reply;
       updateCaption(reply);
-      speakReply(reply);
+      speakReply(reply);  // Start TTS in parallel with scene transition
+      await applyCueFlow(cue);
       state.voice.conversation.push({ role: "user", content: text }, { role: "assistant", content: reply });
       state.voice.conversation = state.voice.conversation.slice(-10);
       if (cue.nextBeat && scriptBeats[cue.nextBeat]) ui.scriptBeatSelect.value = cue.nextBeat;
@@ -2953,12 +2953,12 @@ async function handleAudienceSpeech(text) {
       return;
     }
     const cue = await getDirectorCue(text);
-    await applyCueFlow(cue);
-    applyDirectorCue(cue);
     const reply = cue.reply || "我听见了。画面会跟着你的选择继续向前。";
     ui.voiceReply.textContent = reply;
     updateCaption(reply);
-    speakReply(reply);
+    speakReply(reply);  // Start TTS in parallel with scene transition
+    await applyCueFlow(cue);
+    applyDirectorCue(cue);
     state.voice.conversation.push({ role: "user", content: text }, { role: "assistant", content: reply });
     state.voice.conversation = state.voice.conversation.slice(-10);
     setVoiceStatus(`已回应：${getCurrentBeat().title}`);
@@ -3302,19 +3302,22 @@ function speakReply(text) {
 async function playXfyunTts(text) {
   if (!text) return;
   setVoiceStatus("正在用讯飞聆飞逸合成语音", "thinking");
+
+  // Progressive streaming via MediaSource: audio starts at first chunk, not after all synthesis
+  if (typeof MediaSource !== "undefined" && MediaSource.isTypeSupported("audio/mpeg")) {
+    return playXfyunTtsStream(text);
+  }
+
+  // Fallback for browsers without MP3 MediaSource support
   const response = await fetch("/api/tts", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, voice: state.xfyunVoice }),
   });
-
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.message || payload.error || response.statusText);
   }
-
   const blob = await response.blob();
   const audioUrl = URL.createObjectURL(blob);
   const audio = new Audio(audioUrl);
@@ -3325,6 +3328,68 @@ async function playXfyunTts(text) {
     audio.addEventListener("ended", resolve, { once: true });
     audio.addEventListener("error", resolve, { once: true });
   });
+}
+
+async function playXfyunTtsStream(text) {
+  const response = await fetch("/api/tts-stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, voice: state.xfyunVoice }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || payload.error || response.statusText);
+  }
+
+  const mediaSource = new MediaSource();
+  const objectUrl = URL.createObjectURL(mediaSource);
+  const audio = new Audio(objectUrl);
+  audio.addEventListener("error", () => URL.revokeObjectURL(objectUrl), { once: true });
+
+  const sbReady = new Promise((resolve, reject) => {
+    mediaSource.addEventListener(
+      "sourceopen",
+      () => {
+        try {
+          resolve(mediaSource.addSourceBuffer("audio/mpeg"));
+        } catch (e) {
+          reject(e);
+        }
+      },
+      { once: true },
+    );
+  });
+
+  // Start playback eagerly — audio begins as soon as the first chunk lands
+  audio.play().catch(() => {});
+  const sb = await sbReady;
+  const reader = response.body.getReader();
+
+  const waitForUpdateEnd = () =>
+    new Promise((r) => sb.addEventListener("updateend", r, { once: true }));
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (sb.updating) await waitForUpdateEnd();
+      sb.appendBuffer(value);
+      await waitForUpdateEnd();
+    }
+    if (sb.updating) await waitForUpdateEnd();
+    if (mediaSource.readyState === "open") mediaSource.endOfStream();
+  } catch {
+    try {
+      mediaSource.endOfStream("decode");
+    } catch {}
+  }
+
+  await new Promise((resolve) => {
+    if (audio.ended) { resolve(); return; }
+    audio.addEventListener("ended", resolve, { once: true });
+    audio.addEventListener("error", resolve, { once: true });
+  });
+  URL.revokeObjectURL(objectUrl);
 }
 
 function getCurrentBeat() {
