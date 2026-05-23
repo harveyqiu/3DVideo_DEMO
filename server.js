@@ -4,6 +4,13 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 
+// Structured JSON logger — outputs one JSON line per call to stdout/stderr
+function log(level, msg, ctx = {}) {
+  const entry = { ts: new Date().toISOString(), level, msg, ...ctx };
+  const dest = level === "error" || level === "warn" ? process.stderr : process.stdout;
+  dest.write(JSON.stringify(entry) + "\n");
+}
+
 const rootDir = __dirname;
 const port = Number(process.env.PORT || 5174);
 const moonshotApiKey = process.env.MOONSHOT_API_KEY || "";
@@ -83,9 +90,30 @@ const scriptBeats = {
   },
 };
 
-const server = http.createServer(async (request, response) => {
+const server = http.createServer((request, response) => {
+  const startedAt = Date.now();
+  handleRequest(request, response).finally(() => {
+    const reqPath = request.url.split("?")[0];
+    // Skip health check logs to avoid noise from frequent polling
+    if (reqPath !== "/health") {
+      log("info", "http", {
+        method: request.method,
+        path: reqPath,
+        status: response.statusCode,
+        ms: Date.now() - startedAt,
+      });
+    }
+  });
+});
+
+async function handleRequest(request, response) {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
+
+    if (url.pathname === "/health") {
+      await handleHealth(request, response);
+      return;
+    }
 
     if (url.pathname === "/api/director-cue") {
       await handleDirectorCue(request, response);
@@ -134,18 +162,30 @@ const server = http.createServer(async (request, response) => {
 
     await serveStaticFile(url.pathname, request, response);
   } catch (error) {
+    log("error", "unhandled_error", {
+      method: request.method,
+      path: request.url.split("?")[0],
+      error: error.message,
+    });
     sendJson(response, 500, { error: "server_error", message: error.message });
   }
-});
+}
 
 
 server.listen(port, "127.0.0.1", () => {
   ensureDatabase()
-    .then(() => console.log(`3DVideo_DEMO running at http://127.0.0.1:${port}/`))
+    .then(() => log("info", "server_start", { port, url: `http://127.0.0.1:${port}/` }))
     .catch((error) => {
-      console.error("Failed to initialize database:", error);
+      log("error", "db_init_failed", { error: error.message });
       process.exit(1);
     });
+});
+
+process.on("SIGTERM", () => {
+  log("info", "shutdown", { reason: "SIGTERM" });
+  // Flush pending DB write before exit
+  clearTimeout(dbPersistTimer);
+  withDbWriteLock(persistDatabase).finally(() => process.exit(0));
 });
 
 async function handleLayout(request, response, url) {
@@ -210,6 +250,7 @@ async function handleAssets(request, response, url) {
     const buffer = await readRawBody(request, 512 * 1024 * 1024);
     await fs.promises.writeFile(filePath, buffer);
     assetsCache = null; // invalidate cache after upload (B-5)
+    log("info", "asset_uploaded", { filename: finalName, bytes: buffer.length, ext });
 
     sendJson(response, 200, await assetFromFile(filePath, "uploads"));
     return;
@@ -252,10 +293,12 @@ async function handleDirectorCue(request, response) {
       : null;
   const messages = buildDirectorMessages(text, beatKey, conversation, { scene, variables, age });
 
+  log("info", "moonshot_request", { beat: beatKey, model: kimiModel });
   const { response: upstreamResponse, payload: upstreamPayload, timing } = await requestMoonshot(messages);
   if (!upstreamResponse.ok) {
     const totalMs = Date.now() - requestStartedAt;
     if (upstreamResponse.status === 504) {
+      log("warn", "moonshot_timeout", { beat: beatKey, ms: totalMs, timeoutMs: kimiTimeoutMs });
       sendJson(response, 200, {
         cue: directorCueFromReply("", text, beatKey, { scene, variables, age }),
         warning: upstreamPayload.error?.message || upstreamResponse.statusText,
@@ -282,17 +325,19 @@ async function handleDirectorCue(request, response) {
       });
       return;
     }
+    log("error", "moonshot_error", { beat: beatKey, status: upstreamResponse.status, ms: Date.now() - requestStartedAt });
     sendJson(response, upstreamResponse.status, {
       error: "moonshot_request_failed",
       message: upstreamPayload.error?.message || upstreamResponse.statusText,
       timing: {
         ...timing,
-        totalMs,
+        totalMs: Date.now() - requestStartedAt,
       },
     });
     return;
   }
 
+  log("info", "moonshot_ok", { beat: beatKey, ms: timing.upstreamMs });
   const content = upstreamPayload.choices?.[0]?.message?.content || "";
   const reply = extractReplyText(content);
   sendJson(response, 200, {
@@ -347,7 +392,12 @@ async function handleTts(request, response) {
   const ttsKey = `${voice}\0${text}`;
   let pending = ttsInFlight.get(ttsKey);
   if (!pending) {
-    pending = synthesizeXfyunTts(text, voice).finally(() => ttsInFlight.delete(ttsKey));
+    const ttsStartedAt = Date.now();
+    log("info", "tts_request", { voice, chars: text.length });
+    pending = synthesizeXfyunTts(text, voice)
+      .then((buf) => { log("info", "tts_ok", { voice, chars: text.length, bytes: buf.length, ms: Date.now() - ttsStartedAt }); return buf; })
+      .catch((err) => { log("error", "tts_error", { voice, error: err.message }); throw err; })
+      .finally(() => ttsInFlight.delete(ttsKey));
     ttsInFlight.set(ttsKey, pending);
   }
 
@@ -399,9 +449,13 @@ async function handleTtsStream(request, response) {
     "X-TTS-Voice": voice,
   });
 
+  const streamStartedAt = Date.now();
+  log("info", "tts_stream_request", { voice, chars: text.length });
   try {
     await synthesizeXfyunTtsToStream(text, voice, response);
-  } catch {
+    log("info", "tts_stream_ok", { voice, ms: Date.now() - streamStartedAt });
+  } catch (err) {
+    log("error", "tts_stream_error", { voice, error: err.message });
     // Headers already sent; just close the stream
   }
   response.end();
@@ -678,6 +732,38 @@ async function serveStaticFile(pathname, request, response) {
 }
 
 
+async function handleHealth(request, response) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    sendJson(response, 405, { error: "method_not_allowed" });
+    return;
+  }
+
+  let dbCheck = { ok: false };
+  try {
+    const db = await readDatabase();
+    dbCheck = { ok: true, scenes: Object.keys(db.layouts || {}).length };
+  } catch (error) {
+    dbCheck = { ok: false, error: error.message };
+  }
+
+  const mem = process.memoryUsage();
+  const healthy = dbCheck.ok;
+  sendJson(response, healthy ? 200 : 503, {
+    status: healthy ? "ok" : "degraded",
+    ts: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    memory: {
+      heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      rssMb: Math.round(mem.rss / 1024 / 1024),
+    },
+    checks: {
+      db: dbCheck,
+      moonshot: { configured: Boolean(moonshotApiKey) },
+      xfyun: { configured: Boolean(xfyunAppId && xfyunApiKey && xfyunApiSecret) },
+    },
+  });
+}
+
 function handleScriptBeats(response) {
   sendJson(response, 200, { scriptBeats });
 }
@@ -758,7 +844,7 @@ async function ensureDatabase() {
 }
 
 function withDbWriteLock(fn) {
-  dbWriteChain = dbWriteChain.then(fn).catch((err) => console.error("[db] persist error:", err));
+  dbWriteChain = dbWriteChain.then(fn).catch((err) => log("error", "db_persist_error", { error: err.message }));
   return dbWriteChain;
 }
 
@@ -772,6 +858,7 @@ async function persistDatabase() {
   const tmp = dbPath + ".tmp";
   await fs.promises.writeFile(tmp, JSON.stringify(dbCache, null, 2), "utf8");
   await fs.promises.rename(tmp, dbPath);
+  log("info", "db_persisted", { scenes: Object.keys(dbCache.layouts || {}).length });
 }
 
 async function listLayoutScenes(includeDetails = false) {
@@ -849,7 +936,7 @@ async function readDatabase() {
     dbCache = await normalizeDatabase(db);
     return dbCache;
   } catch (error) {
-    console.error("[db] Failed to read database, returning empty state:", error);
+    log("error", "db_read_failed", { error: error.message });
     dbCache = { layouts: {} };
     return dbCache;
   }
@@ -893,7 +980,10 @@ async function normalizeDatabase(db) {
     changed = true;
   }
 
-  if (changed) schedulePersist();
+  if (changed) {
+    log("info", "db_migrated", { scenes: Object.keys(db.layouts).length });
+    schedulePersist();
+  }
   return db;
 }
 
