@@ -27,6 +27,11 @@ const dataDir = path.join(rootDir, "data");
 const uploadsDir = path.join(rootDir, "uploads");
 const dbPath = path.join(dataDir, "scene-layout-db.json");
 
+// DB cache, write mutex, and debounced persist (B-1, B-6, A-2)
+let dbCache = null;
+let dbWriteChain = Promise.resolve();
+let dbPersistTimer = null;
+
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -47,6 +52,13 @@ const mimeTypes = {
 
 const mediaExtensions = new Set([".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"]);
 const compressibleExtensions = new Set([".html", ".js", ".css", ".json", ".txt"]);
+
+// In-memory gzip cache: filePath → { mtime, buffer } (B-3)
+const gzipCache = new Map();
+// In-memory assets list cache (B-5)
+let assetsCache = null;
+// TTS in-flight deduplication: key → Promise<Buffer> (A-3)
+const ttsInFlight = new Map();
 
 function staticCacheControl(ext) {
   return mediaExtensions.has(ext) ? "public, max-age=31536000" : "no-cache";
@@ -102,6 +114,16 @@ const server = http.createServer(async (request, response) => {
 
     if (url.pathname === "/api/assets") {
       await handleAssets(request, response, url);
+      return;
+    }
+
+    if (url.pathname === "/api/script-beats") {
+      handleScriptBeats(response);
+      return;
+    }
+
+    if (url.pathname === "/api/log-error") {
+      await handleLogError(request, response);
       return;
     }
 
@@ -187,6 +209,7 @@ async function handleAssets(request, response, url) {
     const filePath = path.join(uploadsDir, finalName);
     const buffer = await readRawBody(request, 512 * 1024 * 1024);
     await fs.promises.writeFile(filePath, buffer);
+    assetsCache = null; // invalidate cache after upload (B-5)
 
     sendJson(response, 200, await assetFromFile(filePath, "uploads"));
     return;
@@ -320,8 +343,16 @@ async function handleTts(request, response) {
     return;
   }
 
+  // Deduplicate concurrent requests for identical text+voice (A-3)
+  const ttsKey = `${voice}\0${text}`;
+  let pending = ttsInFlight.get(ttsKey);
+  if (!pending) {
+    pending = synthesizeXfyunTts(text, voice).finally(() => ttsInFlight.delete(ttsKey));
+    ttsInFlight.set(ttsKey, pending);
+  }
+
   try {
-    const audio = await synthesizeXfyunTts(text, voice);
+    const audio = await pending;
     response.writeHead(200, {
       "Content-Type": "audio/mpeg",
       "Content-Length": audio.length,
@@ -529,6 +560,25 @@ async function requestMoonshot(messages) {
   return last;
 }
 
+function generateETag(stat) {
+  return `W/"${stat.mtimeMs.toString(36)}-${stat.size.toString(36)}"`;
+}
+
+function getGzippedBuffer(filePath, stat) {
+  const cached = gzipCache.get(filePath);
+  if (cached && cached.mtime === stat.mtimeMs) return Promise.resolve(cached.buffer);
+  return new Promise((resolve, reject) => {
+    fs.readFile(filePath, (readErr, raw) => {
+      if (readErr) return reject(readErr);
+      zlib.gzip(raw, (gzipErr, buffer) => {
+        if (gzipErr) return reject(gzipErr);
+        gzipCache.set(filePath, { mtime: stat.mtimeMs, buffer });
+        resolve(buffer);
+      });
+    });
+  });
+}
+
 async function serveStaticFile(pathname, request, response) {
   const cleanPath = decodeURIComponent(pathname.split("?")[0]);
   const relativePath = cleanPath === "/" ? "index.html" : cleanPath.replace(/^\/+/, "");
@@ -549,6 +599,14 @@ async function serveStaticFile(pathname, request, response) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = mimeTypes[ext] || "application/octet-stream";
   const cacheControl = staticCacheControl(ext);
+  const etag = generateETag(stat);
+
+  // ETag conditional request (B-4)
+  if (request.headers["if-none-match"] === etag) {
+    response.writeHead(304, { "ETag": etag, "Cache-Control": cacheControl });
+    response.end();
+    return;
+  }
 
   const range = request.headers.range;
   if (range) {
@@ -571,6 +629,7 @@ async function serveStaticFile(pathname, request, response) {
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
       "Accept-Ranges": "bytes",
       "Cache-Control": cacheControl,
+      "ETag": etag,
     });
     if (request.method === "HEAD") {
       response.end();
@@ -584,17 +643,21 @@ async function serveStaticFile(pathname, request, response) {
   const canGzip = acceptEncoding.includes("gzip") && compressibleExtensions.has(ext);
 
   if (canGzip) {
+    // Cached gzip buffer (B-3)
+    const buffer = await getGzippedBuffer(filePath, stat);
     response.writeHead(200, {
       "Content-Type": mimeType,
       "Content-Encoding": "gzip",
+      "Content-Length": buffer.length,
       "Cache-Control": cacheControl,
       "Vary": "Accept-Encoding",
+      "ETag": etag,
     });
     if (request.method === "HEAD") {
       response.end();
       return;
     }
-    fs.createReadStream(filePath).pipe(zlib.createGzip()).pipe(response);
+    response.end(buffer);
     return;
   }
 
@@ -603,6 +666,7 @@ async function serveStaticFile(pathname, request, response) {
     "Content-Length": stat.size,
     "Accept-Ranges": "bytes",
     "Cache-Control": cacheControl,
+    "ETag": etag,
   });
 
   if (request.method === "HEAD") {
@@ -613,6 +677,30 @@ async function serveStaticFile(pathname, request, response) {
   fs.createReadStream(filePath).pipe(response);
 }
 
+
+function handleScriptBeats(response) {
+  sendJson(response, 200, { scriptBeats });
+}
+
+async function handleLogError(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const body = await readJsonBody(request, 4 * 1024);
+    const entry = {
+      ts: new Date().toISOString(),
+      message: String(body.message || "").slice(0, 500),
+      context: body.context || {},
+    };
+    const logPath = path.join(dataDir, "errors.log");
+    await fs.promises.appendFile(logPath, JSON.stringify(entry) + "\n", "utf8");
+    sendJson(response, 200, { ok: true });
+  } catch {
+    sendJson(response, 200, { ok: false });
+  }
+}
 
 function readJsonBody(request, maxBytes) {
   return new Promise((resolve, reject) => {
@@ -669,6 +757,23 @@ async function ensureDatabase() {
   return dbInitPromise;
 }
 
+function withDbWriteLock(fn) {
+  dbWriteChain = dbWriteChain.then(fn).catch((err) => console.error("[db] persist error:", err));
+  return dbWriteChain;
+}
+
+function schedulePersist() {
+  clearTimeout(dbPersistTimer);
+  dbPersistTimer = setTimeout(() => withDbWriteLock(persistDatabase), 500);
+}
+
+async function persistDatabase() {
+  if (!dbCache) return;
+  const tmp = dbPath + ".tmp";
+  await fs.promises.writeFile(tmp, JSON.stringify(dbCache, null, 2), "utf8");
+  await fs.promises.rename(tmp, dbPath);
+}
+
 async function listLayoutScenes(includeDetails = false) {
   const db = await readDatabase();
   return Object.entries(db.layouts || {})
@@ -701,7 +806,7 @@ async function writeLayoutPayload(id, name, payload) {
     payload: { ...payload, id, name },
     updatedAt: new Date().toISOString(),
   };
-  await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
+  schedulePersist();
 }
 
 async function readSettings() {
@@ -712,7 +817,7 @@ async function readSettings() {
 async function writeSettings(nextSettings) {
   const db = await readDatabase();
   db.settings = normalizeSettings({ ...db.settings, ...nextSettings }, db.layouts);
-  await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
+  schedulePersist();
   return db.settings;
 }
 
@@ -736,14 +841,17 @@ function sanitizeSceneName(value) {
 }
 
 async function readDatabase() {
+  if (dbCache) return dbCache;
   await ensureDatabase();
   try {
     const raw = await fs.promises.readFile(dbPath, "utf8");
     const db = JSON.parse(raw);
-    return await normalizeDatabase(db);
+    dbCache = await normalizeDatabase(db);
+    return dbCache;
   } catch (error) {
     console.error("[db] Failed to read database, returning empty state:", error);
-    return { layouts: {} };
+    dbCache = { layouts: {} };
+    return dbCache;
   }
 }
 
@@ -785,9 +893,7 @@ async function normalizeDatabase(db) {
     changed = true;
   }
 
-  if (changed) {
-    await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
-  }
+  if (changed) schedulePersist();
   return db;
 }
 
@@ -811,6 +917,7 @@ function safeJsonParse(value) {
 }
 
 async function listAssets() {
+  if (assetsCache) return assetsCache;
   const roots = [
     { dir: path.join(rootDir, "mat"), base: "mat" },
     { dir: uploadsDir, base: "uploads" },
@@ -819,7 +926,8 @@ async function listAssets() {
   for (const root of roots) {
     await collectAssetFiles(root.dir, root.base, files);
   }
-  return files.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  assetsCache = files.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  return assetsCache;
 }
 
 async function collectAssetFiles(dir, base, files) {
