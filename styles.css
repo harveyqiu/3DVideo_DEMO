@@ -1396,26 +1396,146 @@ label strong {
   align-items: flex-end;
 }
 
-.final-group-select {
+.final-group-rail {
+  position: absolute;
+  left: 20px;
+  top: 232px;
+  z-index: 8;
+  width: 264px;
+  max-height: min(62vh, 560px);
   display: grid;
-  gap: 6px;
-  min-width: 160px;
-  padding: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  transform: none;
+  transform-origin: left top;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
-  background: rgba(10, 13, 12, 0.62);
+  background: rgba(10, 13, 12, 0.58);
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.34);
   backdrop-filter: blur(18px);
+  transition:
+    width 180ms ease,
+    max-height 180ms ease,
+    padding 180ms ease,
+    transform 180ms ease,
+    background 180ms ease,
+    opacity 180ms ease;
+}
+
+.final-group-rail.is-collapsed {
+  width: 118px;
+  max-height: 34px;
+  padding: 0 10px;
+  place-items: center;
+  overflow: hidden;
+  transform: translate(-8px, -8px) scale(0.9);
+  background: rgba(10, 13, 12, 0.44);
+  opacity: 0.82;
+}
+
+.final-group-rail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
   color: var(--muted);
   font-size: 12px;
 }
 
-.final-group-select select {
-  min-height: 38px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0 10px;
-  background: var(--panel-solid);
+.final-group-rail.is-collapsed .final-group-rail-head {
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.final-group-rail-head strong {
   color: var(--text);
+}
+
+.final-group-rail.is-collapsed .final-group-rail-head strong {
+  width: auto;
+  height: auto;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  border-radius: 0;
+  background: transparent;
+}
+
+.final-group-rail.is-collapsed .final-group-rail-head span,
+.final-group-rail.is-collapsed .final-group-cards {
+  display: none;
+}
+
+.final-group-rail #finalSceneGroupSelect {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.final-group-cards {
+  display: grid;
+  gap: 30px;
+  padding: 16px 34px 20px 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.final-group-card {
+  width: 134px;
+  min-height: 92px;
+  display: grid;
+  grid-template-rows: 60px auto;
+  gap: 5px;
+  padding: 6px;
+  transform-origin: left center;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.final-group-card.active {
+  z-index: 1;
+  transform: scale(1.25);
+  border-color: rgba(139, 215, 197, 0.8);
+  background: rgba(139, 215, 197, 0.16);
+}
+
+.final-group-card-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  border-radius: 6px;
+  background-color: #0d1210;
+  object-fit: cover;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.final-group-card-copy {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 20px;
+  text-align: left;
+}
+
+.final-group-card-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-group-card-copy strong {
+  font-size: 13px;
 }
 
 .final-input-row {
@@ -1655,8 +1775,36 @@ label strong {
     flex-wrap: wrap;
   }
 
-  .final-group-select {
-    width: 100%;
+  .final-group-rail {
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: 206px;
+    width: auto;
+    max-height: 190px;
+    transform: none;
+  }
+
+  .final-group-rail.is-collapsed {
+    left: 12px;
+    right: auto;
+    bottom: 206px;
+    width: 118px;
+    max-height: 34px;
+    transform: translate(-4px, -4px) scale(0.9);
+  }
+
+  .final-group-cards {
+    grid-auto-flow: column;
+    grid-auto-columns: 134px;
+    gap: 26px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 12px 28px 16px 14px;
+  }
+
+  .final-group-card.active {
+    transform: scale(1.12);
   }
 
   .final-interaction {

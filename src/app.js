@@ -15,7 +15,11 @@ const ui = {
   newSceneGroupButton: document.querySelector("#newSceneGroupButton"),
   renameSceneGroupButton: document.querySelector("#renameSceneGroupButton"),
   deleteSceneGroupButton: document.querySelector("#deleteSceneGroupButton"),
+  sceneGroupCoverInput: document.querySelector("#sceneGroupCoverInput"),
+  sceneGroupCoverName: document.querySelector("#sceneGroupCoverName"),
   finalSceneGroupSelect: document.querySelector("#finalSceneGroupSelect"),
+  finalSceneGroupCards: document.querySelector("#finalSceneGroupCards"),
+  finalGroupRail: document.querySelector(".final-group-rail"),
   sceneSelect: document.querySelector("#sceneSelect"),
   sceneGroupSceneList: document.querySelector("#sceneGroupSceneList"),
   sceneLogicPane: document.querySelector(".scene-logic-pane"),
@@ -113,6 +117,8 @@ const state = {
   currentSceneId: new URLSearchParams(window.location.search).get("scene") || "default",
   currentSceneName: "默认场景",
   sceneGroups: [],
+  finalGroupPreviewCache: new Map(),
+  finalGroupRailTimer: null,
   activeSceneGroupId: new URLSearchParams(window.location.search).get("group") || "default-group",
   finalSceneGroupId: new URLSearchParams(window.location.search).get("group") || "default-group",
   finalStartSceneId: "default",
@@ -289,6 +295,13 @@ function bindEvents() {
     switchScene(button.dataset.sceneId);
   });
   ui.sceneLogicToggle?.addEventListener("click", () => toggleSceneLogicPane());
+  ui.finalSceneGroupCards?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-group-id]");
+    if (!button || !ui.finalSceneGroupCards.contains(button)) return;
+    await switchFinalSceneGroup(button.dataset.groupId);
+  });
+  ui.finalGroupRail?.addEventListener("pointerenter", () => showFinalGroupRail());
+  ui.finalGroupRail?.addEventListener("pointerleave", () => scheduleFinalGroupRailHide(1000));
   ui.sceneSelect?.addEventListener("change", () => switchScene(ui.sceneSelect.value));
   ui.finalStartSceneSelect?.addEventListener("change", async () => {
     state.finalStartSceneId = ui.finalStartSceneSelect.value || "default";
@@ -309,6 +322,24 @@ function bindEvents() {
     setupSceneAudio();
     scheduleSaveLayout();
     ui.sceneAudioInput.value = "";
+  });
+  ui.sceneGroupCoverInput?.addEventListener("change", async (event) => {
+    const [file] = event.target.files || [];
+    if (!file || !isSupportedImageFile(file)) return;
+    try {
+      const asset = await uploadAsset(file);
+      if (!isUploadedAsset(asset)) throw new Error("cover upload did not return uploads url");
+      updateActiveSceneGroup({ coverAsset: asset });
+      state.finalGroupPreviewCache.delete(state.activeSceneGroupId);
+      syncSceneGroupCoverControls();
+      renderFinalSceneGroupCards();
+      await saveAppSettings();
+      setLayoutStatus(`场景组封面已上传：${asset.name}`, "good");
+    } catch {
+      setLayoutStatus("场景组封面上传失败，请确认已重启 node server.js", "warn");
+    } finally {
+      ui.sceneGroupCoverInput.value = "";
+    }
   });
   ui.gifLoopToggle?.addEventListener("change", () => {
     state.gifLoop = ui.gifLoopToggle.checked;
@@ -709,6 +740,10 @@ function isSupportedMediaFile(file) {
   return /image\/(png|gif)/.test(file.type) || isMovFile(file) || isWebmFile(file);
 }
 
+function isSupportedImageFile(file) {
+  return /^image\/(png|jpeg|webp|gif)$/.test(file.type) || /\.(png|jpe?g|webp|gif)$/i.test(file.name);
+}
+
 function isSupportedAudioFile(file) {
   return /^audio\//.test(file.type) || /\.(mp3|wav|ogg|m4a|aac)$/i.test(file.name);
 }
@@ -768,6 +803,10 @@ async function uploadAsset(file) {
   });
   if (!response.ok) throw new Error("asset upload failed");
   return response.json();
+}
+
+function isUploadedAsset(asset) {
+  return Boolean(asset?.url && asset.url.startsWith("/uploads/"));
 }
 
 function localAssetFromFile(file) {
@@ -1008,6 +1047,7 @@ function normalizeSceneGroups(groups, fallbackStartSceneId = "default") {
         id,
         name: String(group?.name || (id === "default-group" ? "默认场景组" : id)).trim() || "默认场景组",
         finalStartSceneId,
+        coverAsset: normalizeSceneGroupCoverAsset(group?.coverAsset),
       };
     })
     .filter(Boolean);
@@ -1022,6 +1062,19 @@ function serializeAppSettings() {
     activeSceneGroupId: state.activeSceneGroupId,
     finalSceneGroupId: state.finalSceneGroupId,
     sceneGroups: state.sceneGroups,
+  };
+}
+
+function normalizeSceneGroupCoverAsset(asset) {
+  if (!asset || typeof asset !== "object") return null;
+  const url = asset.url || asset.assetUrl || "";
+  if (!url) return null;
+  return {
+    key: asset.key || asset.assetKey || url,
+    name: asset.name || decodeURIComponent(url.split("/").pop() || "scene-group-cover"),
+    url,
+    type: asset.type || asset.assetType || inferAssetType(url),
+    size: Number(asset.size || 0),
   };
 }
 
@@ -1070,6 +1123,15 @@ function renderSceneOptions() {
 function renderSceneGroupOptions() {
   populateSceneGroupSelect(ui.sceneGroupSelect, state.activeSceneGroupId);
   populateSceneGroupSelect(ui.finalSceneGroupSelect, state.finalSceneGroupId);
+  renderFinalSceneGroupCards();
+  syncSceneGroupCoverControls();
+}
+
+function syncSceneGroupCoverControls() {
+  if (!ui.sceneGroupCoverName) return;
+  const cover = getActiveSceneGroup().coverAsset;
+  ui.sceneGroupCoverName.textContent = cover?.name || "未设置封面";
+  ui.sceneGroupCoverName.classList.toggle("empty", !cover);
 }
 
 function renderFinalStartSceneOptions() {
@@ -1089,6 +1151,138 @@ function populateSceneGroupSelect(select, selected = "") {
   });
   select.replaceChildren(fragment);
   select.value = hasSceneGroup(selected) ? selected : state.sceneGroups[0]?.id || "";
+}
+
+function renderFinalSceneGroupCards() {
+  if (!ui.finalSceneGroupCards) return;
+  const fragment = document.createDocumentFragment();
+  state.sceneGroups.forEach((group) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.dataset.groupId = group.id;
+    card.className = `final-group-card${group.id === state.finalSceneGroupId ? " active" : ""}`;
+
+    const image = document.createElement("img");
+    image.className = "final-group-card-image";
+    image.alt = "";
+    image.loading = "lazy";
+    image.src = getSceneGroupPreviewUrl(group);
+    const copy = document.createElement("span");
+    copy.className = "final-group-card-copy";
+    const title = document.createElement("strong");
+    title.textContent = group.name;
+    copy.append(title);
+    card.append(image, copy);
+    fragment.append(card);
+  });
+  ui.finalSceneGroupCards.replaceChildren(fragment);
+  hydrateFinalSceneGroupPreviews();
+}
+
+function getSceneById(sceneId) {
+  return state.scenes.find((scene) => scene.id === sceneId);
+}
+
+function getSceneGroupPreviewUrl(group) {
+  return group.coverAsset?.url || state.finalGroupPreviewCache.get(group.id) || makeSceneGroupPreviewPlaceholder(group);
+}
+
+function makeSceneGroupPreviewPlaceholder(group) {
+  const scene = getSceneById(group.finalStartSceneId);
+  const buffer = makePlaceholderMedia(group.name, scene ? getSceneLabel(scene.id) : "未设置首场景");
+  return buffer.toDataURL("image/png");
+}
+
+function hydrateFinalSceneGroupPreviews() {
+  if (!ui.finalSceneGroupCards) return;
+  state.sceneGroups.forEach((group) => {
+    if (group.coverAsset?.url) return;
+    if (state.finalGroupPreviewCache.has(group.id)) return;
+    renderSceneGroupPreview(group)
+      .then((url) => {
+        state.finalGroupPreviewCache.set(group.id, url);
+        const image = ui.finalSceneGroupCards?.querySelector(`[data-group-id="${CSS.escape(group.id)}"] .final-group-card-image`);
+        if (image) image.src = url;
+      })
+      .catch(() => {});
+  });
+}
+
+async function renderSceneGroupPreview(group) {
+  const scene = getSceneById(group.finalStartSceneId);
+  const layout = scene?.layout;
+  if (!layout) return makeSceneGroupPreviewPlaceholder(group);
+  const buffer = document.createElement("canvas");
+  buffer.width = 320;
+  buffer.height = 180;
+  const context = buffer.getContext("2d");
+  context.fillStyle = "#0d1210";
+  context.fillRect(0, 0, buffer.width, buffer.height);
+  drawPreviewGrid(context, buffer.width, buffer.height);
+
+  const records = Array.isArray(layout.items) ? layout.items.slice(0, 5) : [];
+  const sorted = records.sort((a, b) => Number(b.z || 0) - Number(a.z || 0));
+  const media = await Promise.allSettled(sorted.map(loadPreviewMedia));
+  media.forEach((result, index) => {
+    if (result.status !== "fulfilled" || !result.value) return;
+    drawPreviewItem(context, result.value, sorted[index], buffer.width, buffer.height);
+  });
+
+  context.fillStyle = "rgba(0,0,0,0.56)";
+  context.fillRect(0, buffer.height - 34, buffer.width, 34);
+  context.fillStyle = "#f3f1e8";
+  context.font = "700 18px Inter, sans-serif";
+  context.fillText(shortenName(group.name), 14, buffer.height - 12);
+  return buffer.toDataURL("image/png");
+}
+
+function drawPreviewGrid(context, width, height) {
+  context.save();
+  context.strokeStyle = "rgba(139,215,197,0.14)";
+  context.lineWidth = 1;
+  for (let x = -width; x < width * 2; x += 28) {
+    context.beginPath();
+    context.moveTo(x, height);
+    context.lineTo(width / 2 + (x - width / 2) * 0.28, height * 0.45);
+    context.stroke();
+  }
+  for (let y = height * 0.48; y < height; y += 18) {
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+    context.stroke();
+  }
+  context.restore();
+}
+
+async function loadPreviewMedia(record) {
+  const asset = assetFromLayoutRecord(record);
+  if (!asset.url) return null;
+  if (isVideoAsset(asset)) {
+    const video = await preloadVideoAsset(asset);
+    return video.videoWidth ? video : null;
+  }
+  const image = await preloadImageAsset(asset.url);
+  return image;
+}
+
+function drawPreviewItem(context, media, record, width, height) {
+  const focal = 860;
+  const depth = focal + Number(record.z || 0);
+  const projectedScale = clamp(focal / Math.max(220, depth), 0.28, 2.2);
+  const x = width / 2 + Number(record.x || 0) * 0.2 * projectedScale;
+  const y = height * 0.48 + Number(record.y || 0) * 0.2 * projectedScale;
+  const mediaWidth = getMediaWidth(media);
+  const mediaHeight = getMediaHeight(media);
+  const base = Number(record.scale || 1) * projectedScale * 0.34;
+  const drawWidth = mediaWidth * base;
+  const drawHeight = mediaHeight * base;
+  context.save();
+  context.translate(x, y);
+  context.rotate(Number(record.rotation || 0));
+  context.globalAlpha = clamp(Number(record.alpha ?? 1), 0, 1);
+  context.drawImage(media, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  context.restore();
 }
 
 function renderSceneGroupStructure() {
@@ -2082,6 +2276,8 @@ function setLayoutStatus(message, tone = "") {
 function inferAssetType(url = "") {
   if (/\.gif$/i.test(url)) return "image/gif";
   if (/\.png$/i.test(url)) return "image/png";
+  if (/\.jpe?g$/i.test(url)) return "image/jpeg";
+  if (/\.webp$/i.test(url)) return "image/webp";
   if (/\.mov$/i.test(url)) return "video/quicktime";
   if (/\.webm$/i.test(url)) return "video/webm";
   if (/\.mp4$/i.test(url)) return "video/mp4";
@@ -2547,11 +2743,31 @@ function togglePlayback() {
     if (state.paused) ui.sceneAudio.pause();
     else playSceneAudio();
   }
+  if (isFinal) {
+    if (state.paused) showFinalGroupRail();
+    else scheduleFinalGroupRailHide(1500);
+  }
 }
 
 function closeFinalIntroModal() {
   if (!ui.finalIntroModal || ui.finalIntroModal.hidden) return;
   ui.finalIntroModal.hidden = true;
+  if (isFinal && !state.paused) scheduleFinalGroupRailHide(1500);
+}
+
+function showFinalGroupRail() {
+  if (!ui.finalGroupRail) return;
+  clearTimeout(state.finalGroupRailTimer);
+  ui.finalGroupRail.classList.remove("is-collapsed");
+}
+
+function scheduleFinalGroupRailHide(delay = 1000) {
+  if (!ui.finalGroupRail || !isFinal) return;
+  clearTimeout(state.finalGroupRailTimer);
+  state.finalGroupRailTimer = window.setTimeout(() => {
+    if (state.paused) return;
+    ui.finalGroupRail.classList.add("is-collapsed");
+  }, delay);
 }
 
 function drawReticle() {

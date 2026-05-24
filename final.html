@@ -27,13 +27,17 @@
           <span id="trackingMeta">等待视觉输入</span>
         </section>
 
+        <section class="final-group-rail" aria-label="选择场景组">
+          <div class="final-group-rail-head">
+            <strong>视频选择</strong>
+          </div>
+          <div id="finalSceneGroupCards" class="final-group-cards"></div>
+          <select id="finalSceneGroupSelect" aria-label="选择场景组">
+            <option value="default-group">默认场景组</option>
+          </select>
+        </section>
+
         <div class="final-control-dock">
-          <label class="final-group-select">
-            <span>场景组</span>
-            <select id="finalSceneGroupSelect">
-              <option value="default-group">默认场景组</option>
-            </select>
-          </label>
           <button
             id="playPauseButton"
             class="play-pause-button paused"

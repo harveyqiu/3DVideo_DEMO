@@ -35,6 +35,9 @@ const mimeTypes = {
   ".json": "application/json; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
   ".gif": "image/gif",
   ".mov": "video/quicktime",
   ".mp4": "video/mp4",
@@ -47,7 +50,21 @@ const mimeTypes = {
   ".txt": "text/plain; charset=utf-8",
 };
 
-const mediaExtensions = new Set([".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"]);
+const mediaExtensions = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".mov",
+  ".mp4",
+  ".webm",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".m4a",
+  ".aac",
+]);
 const compressibleExtensions = new Set([".html", ".js", ".css", ".json", ".txt"]);
 
 function staticCacheControl(ext) {
@@ -683,6 +700,7 @@ function normalizeSceneGroups(groups, layouts, fallbackStartSceneId) {
         id,
         name: sanitizeSceneGroupName(group?.name || (id === "default-group" ? "默认场景组" : id)),
         finalStartSceneId: layouts[startSceneId] ? startSceneId : fallbackStartSceneId,
+        coverAsset: normalizeSceneGroupCoverAsset(group?.coverAsset),
       };
     })
     .filter(Boolean);
@@ -701,6 +719,19 @@ function sanitizeSceneGroupId(value) {
 
 function sanitizeSceneGroupName(value) {
   return String(value || "默认场景组").trim().slice(0, 80) || "默认场景组";
+}
+
+function normalizeSceneGroupCoverAsset(asset) {
+  if (!asset || typeof asset !== "object") return null;
+  const url = String(asset.url || asset.assetUrl || "");
+  if (!/^\/?uploads\//.test(url)) return null;
+  return {
+    key: String(asset.key || asset.assetKey || url),
+    name: String(asset.name || path.basename(url) || "scene-group-cover").slice(0, 120),
+    url,
+    type: String(asset.type || asset.assetType || getAssetType(url)),
+    size: Number(asset.size || 0),
+  };
 }
 
 function sanitizeSceneId(value) {

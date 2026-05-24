@@ -191,7 +191,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-24T07:18:15.684Z"
+      "updatedAt": "2026-05-24T08:25:18.416Z"
     },
     "w1-mos8b1bn": {
       "name": "W1",
@@ -2638,7 +2638,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-24T07:56:35.689Z"
+      "updatedAt": "2026-05-24T08:25:10.121Z"
     },
     "d1-s-mpjg61zh": {
       "name": "D1-S",
@@ -2811,18 +2811,32 @@
   },
   "settings": {
     "finalStartSceneId": "t1-起始场景-mpjcb34r",
-    "activeSceneGroupId": "t1-mpjcb34r",
+    "activeSceneGroupId": "default-group",
     "finalSceneGroupId": "t1-mpjcb34r",
     "sceneGroups": [
       {
         "id": "default-group",
         "name": "荒岛求生",
-        "finalStartSceneId": "a1-mos899qj"
+        "finalStartSceneId": "a1-mos899qj",
+        "coverAsset": {
+          "key": "uploads/huandaoqiusheng.jpg",
+          "name": "huandaoqiusheng.jpg",
+          "url": "/uploads/huandaoqiusheng.jpg",
+          "type": "image/jpeg",
+          "size": 161785
+        }
       },
       {
         "id": "t1-mpjcb34r",
         "name": "《主角》易青娥初次登台-沉浸感体验",
-        "finalStartSceneId": "t1-起始场景-mpjcb34r"
+        "finalStartSceneId": "t1-起始场景-mpjcb34r",
+        "coverAsset": {
+          "key": "uploads/dengchang.jpg",
+          "name": "dengchang.jpg",
+          "url": "/uploads/dengchang.jpg",
+          "type": "image/jpeg",
+          "size": 81210
+        }
       }
     ]
   }
