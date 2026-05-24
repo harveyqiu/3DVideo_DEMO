@@ -464,6 +464,10 @@ body.intro-page {
 .intro-demo-panel {
   display: grid;
   align-content: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.045);
 }
 
 .intro-demo-frame {
@@ -573,14 +577,35 @@ body.intro-page {
   font-weight: 800;
 }
 
+.intro-idea-hint {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.68;
+}
+
 .intro-idea-card.is-open .intro-idea-toggle {
   place-items: start;
   text-align: left;
 }
 
+.intro-idea-card.is-open .intro-idea-hint {
+  display: none;
+}
+
 .intro-idea-card h3 {
   margin: 0;
   font-size: 19px;
+}
+
+.intro-idea-content {
+  display: none;
+}
+
+.intro-idea-card.is-open .intro-idea-content {
+  display: block;
 }
 
 .intro-idea-content p {

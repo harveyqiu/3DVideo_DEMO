@@ -92,7 +92,7 @@
                 <p><b>「最终展示页」，仅支持电脑浏览器体验。</b></p>
                 </div>
               </div>
-              <a href="./final.html">打开 视频展示页</a>
+              <a href="./final.html">打开 最终展示页</a>
             </article>
 
             <div class="intro-demo-panel">
@@ -125,7 +125,7 @@
               <h2>作品创作思路</h2>
             </div>
             <p>
-              很多时候，我们会在悬疑片里提前发现线索，会在误会桥段里忍不住替角色着急，也会在结局出现时希望“如果当时换个选择会怎样”。但传统视频始终是线性的，用户只能观看，而无法改变。
+              传统视频始终是线性的，用户只能观看，而无法改变。
               因此，我们希望尝试一种新的内容形态
             </p>
           </div>
@@ -139,9 +139,9 @@
                 <p>为什么我们在看视频时，明明已经产生了自己的判断与情绪，却永远无法真正参与剧情？</p>
                 <p>因此，我们希望尝试一种新的内容形态。这个项目融合了三种能力：</p>
                 <ul class="intro-list">
-                  <li>通过裸眼3D增强“空间沉浸感”</li>
-                  <li>通过AI实时对话增强“角色参与感”</li>
-                  <li>通过多分支剧情增强“决策影响感”</li>
+                  <li class="intro-green">通过裸眼3D增强“空间沉浸感”</li>
+                  <li class="intro-green">通过AI实时对话增强“角色参与感”</li>
+                  <li class="intro-green">通过多分支剧情增强“决策影响感”</li>
                 </ul>
                 <p class="intro-green">最终，我们构建出了一个基于 AI + 3D + 实时语音交互的互动叙事系统。</p>
               </div>
@@ -159,7 +159,7 @@
                   创作者可以通过<b>图层化编辑快速搭建3D空间场景</b>，通过<b>可视化方式配置剧情分支</b>，并结合<b> AI 自动生成角色对话与互动逻辑</b>。
                 </p>
                 <p class="intro-green">过去，互动叙事往往意味着高成本开发；而现在，它可以像剪视频一样被快速制作。</p>
-                <p><b>「编辑器」，仅支持电脑浏览器体验。</b></p>
+                <p><b>「场景编辑器」，仅支持电脑浏览器体验。</b></p>
               </div>
               <a href="./index.html" target="_blank" rel="noreferrer">打开编辑器</a>
             </article>
@@ -169,6 +169,7 @@
             <article class="intro-idea-card">
               <button class="intro-idea-toggle" type="button" aria-expanded="false">
                 <span>如何实现裸眼3D？</span>
+                <small class="intro-idea-hint">请点击查看</small>
               </button>
               <div class="intro-idea-content">
                 <p>系统通过调用浏览器摄像头，实时<b>获取用户头部位置与双眼相对距离</b>，并结合<b>视差（Parallax）原理</b>动态调整画面图层的位置变化。</p>
@@ -179,6 +180,7 @@
             <article class="intro-idea-card">
               <button class="intro-idea-toggle" type="button" aria-expanded="false">
                 <span>如何实现实时语音对话？</span>
+                <small class="intro-idea-hint">请点击查看</small>
               </button>
               <div class="intro-idea-content">
                 <p>用户的语音会首先通过<b>语音识别（ASR）转化为文本</b>，再发送至 <b>Kimi 大模型</b>进行语义理解与意图识别。</p>
@@ -189,6 +191,7 @@
             <article class="intro-idea-card">
               <button class="intro-idea-toggle" type="button" aria-expanded="false">
                 <span>如何让剧情产生不同结局？</span>
+                <small class="intro-idea-hint">请点击查看</small>
               </button>
               <div class="intro-idea-content">
                 <p>系统内部构建了一套<b>剧情状态管理机制</b>。</p>
