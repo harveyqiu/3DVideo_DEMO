@@ -191,7 +191,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-24T05:18:42.958Z"
+      "updatedAt": "2026-05-24T07:18:15.684Z"
     },
     "w1-mos8b1bn": {
       "name": "W1",
@@ -504,7 +504,7 @@
           "webmLoop": false,
           "flow": {
             "mode": "auto",
-            "nextSceneId": "h2-motzlpd2",
+            "nextSceneId": "d1-s-mpjg61zh",
             "routes": [
               {
                 "keywords": "水",
@@ -517,7 +517,8 @@
             ]
           },
           "xfyunVoice": "x6_lingfeiyi_pro",
-          "ageRequired": false
+          "ageRequired": false,
+          "realtimeReply": false
         },
         "items": [
           {
@@ -550,7 +551,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T11:58:51.376Z"
+      "updatedAt": "2026-05-24T07:19:54.434Z"
     },
     "h0-s-mou07xrb": {
       "name": "H0-S",
@@ -1879,7 +1880,7 @@
           "webmLoop": false,
           "flow": {
             "mode": "auto",
-            "nextSceneId": "h2-motzlpd2",
+            "nextSceneId": "d1-h-mpjgpvmr",
             "routes": [
               {
                 "keywords": "水",
@@ -1926,7 +1927,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T16:58:19.151Z"
+      "updatedAt": "2026-05-24T07:35:26.538Z"
     },
     "s3-h-mouax4mj": {
       "name": "S3-H",
@@ -2565,18 +2566,24 @@
       "updatedAt": "2026-05-24T05:28:56.076Z"
     },
     "t1-起始场景-mpjcb34r": {
-      "name": "t1 起始场景",
+      "name": "《主角》",
       "payload": {
         "id": "t1-起始场景-mpjcb34r",
-        "name": "t1 起始场景",
+        "name": "《主角》",
         "scene": {
-          "focal": 860,
-          "parallax": 92,
+          "focal": 941.2,
+          "parallax": 180,
           "showGrid": true,
-          "audioAsset": null,
-          "audioLoop": true,
-          "gifLoop": true,
-          "webmLoop": true,
+          "audioAsset": {
+            "key": "uploads/Q1-1.mp3",
+            "name": "Q1-1.mp3",
+            "url": "/uploads/Q1-1.mp3",
+            "type": "audio/mpeg",
+            "size": 363674
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
           "flow": {
             "mode": "none",
             "nextSceneId": "",
@@ -2586,15 +2593,226 @@
           "ageRequired": false,
           "realtimeReply": false
         },
-        "items": []
+        "items": [
+          {
+            "id": "fbb680c5-9cf0-46d7-8607-1779c9675b49",
+            "name": "1-7.webm",
+            "assetKey": "uploads/1-7.webm",
+            "assetUrl": "/uploads/1-7.webm",
+            "assetType": "video/webm",
+            "x": 0,
+            "y": 147.2,
+            "z": -120,
+            "scale": 0.411,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "c0ddc964-59e9-470d-8fd6-429e594cafdd",
+            "name": "2.png",
+            "assetKey": "uploads/2.png",
+            "assetUrl": "/uploads/2.png",
+            "assetType": "image/png",
+            "x": 93.60000000000002,
+            "y": 32,
+            "z": 60,
+            "scale": 1.225,
+            "rotation": -0.08726646259971647,
+            "tilt": -0.09599310885968812,
+            "alpha": 1
+          },
+          {
+            "id": "8abd676a-f28d-4865-afa3-03f21b217fed",
+            "name": "3-2.webm",
+            "assetKey": "uploads/3-2.webm",
+            "assetUrl": "/uploads/3-2.webm",
+            "assetType": "video/webm",
+            "x": -280.79999999999995,
+            "y": 25.600000000000023,
+            "z": 980,
+            "scale": 2.1870000000000003,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
       },
-      "updatedAt": "2026-05-24T05:31:38.541Z"
+      "updatedAt": "2026-05-24T07:56:35.689Z"
+    },
+    "d1-s-mpjg61zh": {
+      "name": "D1-S",
+      "payload": {
+        "id": "d1-s-mpjg61zh",
+        "name": "D1-S",
+        "scene": {
+          "focal": 715,
+          "parallax": 180,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/D1.mp3",
+            "name": "D1.mp3",
+            "url": "/uploads/D1.mp3",
+            "type": "audio/mpeg",
+            "size": 170159
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "h2-motzlpd2",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": [
+          {
+            "id": "bd066406-7525-4220-aa3d-31017f4fab3d",
+            "name": "D1-1.webm",
+            "assetKey": "uploads/D1-1.webm",
+            "assetUrl": "/uploads/D1-1.webm",
+            "assetType": "video/webm",
+            "x": -21.75259297575365,
+            "y": 110.3310226275938,
+            "z": -260,
+            "scale": 0.448,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "2e1187c6-5f15-4e28-8a99-1bd50d2ad330",
+            "name": "D1-2.png",
+            "assetKey": "uploads/D1-2.png",
+            "assetUrl": "/uploads/D1-2.png",
+            "assetType": "image/png",
+            "x": 2.9267628596833273,
+            "y": 320,
+            "z": -151.6,
+            "scale": 1.151,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "77686d3c-ceeb-4741-967d-24d35321fc1f",
+            "name": "D1-3.webm",
+            "assetKey": "uploads/D1-3.webm",
+            "assetUrl": "/uploads/D1-3.webm",
+            "assetType": "video/webm",
+            "x": -21.638581747841968,
+            "y": 51.19999999999999,
+            "z": -24.400000000000006,
+            "scale": 0.855,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-24T07:34:57.899Z"
+    },
+    "d1-h-mpjgpvmr": {
+      "name": "D1-H",
+      "payload": {
+        "id": "d1-h-mpjgpvmr",
+        "name": "D1-H",
+        "scene": {
+          "focal": 715,
+          "parallax": 180,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/D1.mp3",
+            "name": "D1.mp3",
+            "url": "/uploads/D1.mp3",
+            "type": "audio/mpeg",
+            "size": 170159
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "h2-motzlpd2",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": [
+          {
+            "id": "bd066406-7525-4220-aa3d-31017f4fab3d",
+            "name": "D1-1.webm",
+            "assetKey": "uploads/D1-1.webm",
+            "assetUrl": "/uploads/D1-1.webm",
+            "assetType": "video/webm",
+            "x": -21.75259297575365,
+            "y": 110.3310226275938,
+            "z": -260,
+            "scale": 0.448,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "2e1187c6-5f15-4e28-8a99-1bd50d2ad330",
+            "name": "D1-2.png",
+            "assetKey": "uploads/D1-2.png",
+            "assetUrl": "/uploads/D1-2.png",
+            "assetType": "image/png",
+            "x": 2.9267628596833273,
+            "y": 320,
+            "z": -151.6,
+            "scale": 1.151,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "77686d3c-ceeb-4741-967d-24d35321fc1f",
+            "name": "D1-3.webm",
+            "assetKey": "uploads/D1-3.webm",
+            "assetUrl": "/uploads/D1-3.webm",
+            "assetType": "video/webm",
+            "x": -21.638581747841968,
+            "y": 51.19999999999999,
+            "z": -24.400000000000006,
+            "scale": 0.855,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-24T07:35:07.120Z"
     }
   },
   "settings": {
-    "finalStartSceneId": "a1-mos899qj",
-    "activeSceneGroupId": "default-group",
-    "finalSceneGroupId": "default-group",
+    "finalStartSceneId": "t1-起始场景-mpjcb34r",
+    "activeSceneGroupId": "t1-mpjcb34r",
+    "finalSceneGroupId": "t1-mpjcb34r",
     "sceneGroups": [
       {
         "id": "default-group",
@@ -2602,13 +2820,8 @@
         "finalStartSceneId": "a1-mos899qj"
       },
       {
-        "id": "主角-易青娥初次登台-沉浸感体验-mpjbw638",
-        "name": "《主角》易青娥初次登台-沉浸感体验",
-        "finalStartSceneId": "a1-mos899qj"
-      },
-      {
         "id": "t1-mpjcb34r",
-        "name": "t1",
+        "name": "《主角》易青娥初次登台-沉浸感体验",
         "finalStartSceneId": "t1-起始场景-mpjcb34r"
       }
     ]
