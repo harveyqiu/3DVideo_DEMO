@@ -1,8 +1,13 @@
 const canvas = document.querySelector("#stage");
 const ctx = canvas.getContext("2d", { alpha: false });
+const urlParams = new URLSearchParams(window.location.search);
 const appMode = document.body.dataset.mode || "editor";
+const isEditor = appMode === "editor";
 const isViewer = appMode === "viewer";
 const isFinal = appMode === "final";
+const isIntroDemo = appMode === "intro-demo";
+const isIntroEmbed = (isFinal && urlParams.get("intro") === "1") || isIntroDemo;
+const introEmbedProjectionScale = 0.62;
 
 const ui = {
   fileInput: document.querySelector("#fileInput"),
@@ -10,7 +15,21 @@ const ui = {
   autoLayoutButton: document.querySelector("#autoLayoutButton"),
   saveLayoutButton: document.querySelector("#saveLayoutButton"),
   saveAsLayoutButton: document.querySelector("#saveAsLayoutButton"),
+  sceneGroupSelect: document.querySelector("#sceneGroupSelect"),
+  newSceneGroupButton: document.querySelector("#newSceneGroupButton"),
+  renameSceneGroupButton: document.querySelector("#renameSceneGroupButton"),
+  deleteSceneGroupButton: document.querySelector("#deleteSceneGroupButton"),
+  sceneGroupCoverInput: document.querySelector("#sceneGroupCoverInput"),
+  sceneGroupCoverName: document.querySelector("#sceneGroupCoverName"),
+  finalSceneGroupSelect: document.querySelector("#finalSceneGroupSelect"),
+  finalSceneGroupCards: document.querySelector("#finalSceneGroupCards"),
+  finalGroupRail: document.querySelector(".final-group-rail"),
   sceneSelect: document.querySelector("#sceneSelect"),
+  sceneGroupSceneList: document.querySelector("#sceneGroupSceneList"),
+  sceneLogicPane: document.querySelector(".scene-logic-pane"),
+  sceneLogicGraph: document.querySelector("#sceneLogicGraph"),
+  sceneLogicGroupName: document.querySelector("#sceneLogicGroupName"),
+  sceneLogicToggle: document.querySelector("#sceneLogicToggle"),
   sceneNameInput: document.querySelector("#sceneNameInput"),
   finalStartSceneSelect: document.querySelector("#finalStartSceneSelect"),
   xfyunVoiceSelect: document.querySelector("#xfyunVoiceSelect"),
@@ -24,6 +43,7 @@ const ui = {
   realtimeReplyToggle: document.querySelector("#realtimeReplyToggle"),
   sceneEndMode: document.querySelector("#sceneEndMode"),
   sceneNextSceneSelect: document.querySelector("#sceneNextSceneSelect"),
+  flowVisibleSections: document.querySelectorAll("[data-flow-visible]"),
   flowRouteRows: document.querySelectorAll("[data-flow-route]"),
   exportButton: document.querySelector("#exportButton"),
   deleteButton: document.querySelector("#deleteButton"),
@@ -96,8 +116,15 @@ const state = {
   tracker: null,
   dragging: null,
   layoutSaveTimer: null,
-  currentSceneId: new URLSearchParams(window.location.search).get("scene") || "default",
+  lastLayoutSaveSignature: "",
+  pendingLayoutSaveSignature: "",
+  currentSceneId: urlParams.get("scene") || "default",
   currentSceneName: "默认场景",
+  sceneGroups: [],
+  finalGroupPreviewCache: new Map(),
+  finalGroupRailTimer: null,
+  activeSceneGroupId: urlParams.get("group") || "default-group",
+  finalSceneGroupId: urlParams.get("group") || "default-group",
   finalStartSceneId: "default",
   scenes: [],
   loadingScene: true,
@@ -119,7 +146,7 @@ const state = {
   activeTts: null,
   gifState: new Map(), // id → { element, player, pauseFrame }
   scenePlaybackToken: 0,
-  paused: isFinal,
+  paused: isFinal || isIntroDemo,
   transitionToken: 0,
   itemsSortDirty: true,
   _sortedItems: [],
@@ -187,6 +214,18 @@ const controls = ["xRange", "yRange", "zRange", "scaleRange", "rotationRange", "
 init();
 
 async function init() {
+  if (isIntroEmbed) {
+    document.body.classList.add("intro-embed-final");
+    ui.finalIntroModal?.setAttribute("hidden", "");
+    if (!isMobileMotionDevice()) {
+      showIntroEmbedUnsupported();
+      bindEvents();
+      resize();
+      requestAnimationFrame(draw);
+      return;
+    }
+    setupIntroEmbedMotionTracking();
+  }
   bindEvents();
   resize();
   await loadInitialScene();
@@ -211,21 +250,21 @@ function bindEvents() {
       resizeDebounce = setTimeout(resize, 16);
     }).observe(canvas);
   } else {
-    window.addEventListener("resize", resize);
+    on(window, "resize", resize);
   }
-  window.addEventListener("pointerdown", () => playSceneAudio(), { once: true });
-  window.addEventListener("keydown", () => playSceneAudio(), { once: true });
+  on(window, "pointerdown", () => playSceneAudio(), { once: true });
+  on(window, "keydown", () => playSceneAudio(), { once: true });
 
   ui.tabButtons.forEach((button) => {
     button.addEventListener("click", () => activateTab(button.dataset.tabTarget));
   });
 
-  ui.fileInput.addEventListener("change", async (event) => {
+  on(ui.fileInput, "change", async (event) => {
     await addFiles([...event.target.files]);
     ui.fileInput.value = "";
   });
 
-  ui.cameraButton.addEventListener("click", () => {
+  on(ui.cameraButton, "click", () => {
     if (state.cameraOn) {
       stopCamera();
     } else {
@@ -234,25 +273,64 @@ function bindEvents() {
     playSceneAudio();
   });
 
-  ui.cameraSelect.addEventListener("change", () => {
+  on(ui.cameraSelect, "change", () => {
     state.cameraDeviceId = ui.cameraSelect.value;
     if (state.cameraOn) startCamera();
   });
 
-  ui.autoLayoutButton.addEventListener("click", () => {
+  on(ui.autoLayoutButton, "click", () => {
     autoLayout();
     syncControls();
     renderLayerList();
     scheduleSaveLayout();
   });
 
-  ui.exportButton.addEventListener("click", exportFrame);
-  ui.deleteButton.addEventListener("click", deleteSelected);
+  on(ui.exportButton, "click", exportFrame);
+  on(ui.deleteButton, "click", deleteSelected);
+  on(ui.layerList, "click", (event) => {
+    const button = event.target.closest("[data-layer-id]");
+    if (!button || !ui.layerList.contains(button)) return;
+    state.selectedId = button.dataset.layerId;
+    syncControls();
+    renderLayerList();
+  });
   ui.saveLayoutButton?.addEventListener("click", () => saveLayoutNow());
   ui.saveAsLayoutButton?.addEventListener("click", () => saveAsLayout());
+  ui.sceneGroupSelect?.addEventListener("change", async () => switchSceneGroup(ui.sceneGroupSelect.value));
+  ui.finalSceneGroupSelect?.addEventListener("change", async () => {
+    if (isFinal) {
+      await switchFinalSceneGroup(ui.finalSceneGroupSelect.value);
+      return;
+    }
+    state.finalSceneGroupId = ui.finalSceneGroupSelect.value || state.activeSceneGroupId;
+    await saveAppSettings();
+  });
+  ui.newSceneGroupButton?.addEventListener("click", () => createSceneGroup());
+  ui.renameSceneGroupButton?.addEventListener("click", () => renameActiveSceneGroup());
+  ui.deleteSceneGroupButton?.addEventListener("click", () => deleteActiveSceneGroup());
+  ui.sceneGroupSceneList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-scene-id]");
+    if (!button || !ui.sceneGroupSceneList.contains(button)) return;
+    switchScene(button.dataset.sceneId);
+  });
+  ui.sceneLogicGraph?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-scene-id]");
+    if (!button || !ui.sceneLogicGraph.contains(button)) return;
+    switchScene(button.dataset.sceneId);
+  });
+  ui.sceneLogicToggle?.addEventListener("click", () => toggleSceneLogicPane());
+  ui.finalSceneGroupCards?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-group-id]");
+    if (!button || !ui.finalSceneGroupCards.contains(button)) return;
+    await switchFinalSceneGroup(button.dataset.groupId);
+  });
+  ui.finalGroupRail?.addEventListener("pointerenter", () => showFinalGroupRail());
+  ui.finalGroupRail?.addEventListener("pointerleave", () => scheduleFinalGroupRailHide(1000));
   ui.sceneSelect?.addEventListener("change", () => switchScene(ui.sceneSelect.value));
   ui.finalStartSceneSelect?.addEventListener("change", async () => {
     state.finalStartSceneId = ui.finalStartSceneSelect.value || "default";
+    updateActiveSceneGroup({ finalStartSceneId: state.finalStartSceneId });
+    renderSceneGroupStructure();
     await saveAppSettings();
   });
   ui.xfyunVoiceSelect?.addEventListener("change", () => {
@@ -268,6 +346,24 @@ function bindEvents() {
     setupSceneAudio();
     scheduleSaveLayout();
     ui.sceneAudioInput.value = "";
+  });
+  ui.sceneGroupCoverInput?.addEventListener("change", async (event) => {
+    const [file] = event.target.files || [];
+    if (!file || !isSupportedImageFile(file)) return;
+    try {
+      const asset = await uploadAsset(file);
+      if (!isUploadedAsset(asset)) throw new Error("cover upload did not return uploads url");
+      updateActiveSceneGroup({ coverAsset: asset });
+      state.finalGroupPreviewCache.delete(state.activeSceneGroupId);
+      syncSceneGroupCoverControls();
+      renderFinalSceneGroupCards();
+      await saveAppSettings();
+      setLayoutStatus(`场景组封面已上传：${asset.name}`, "good");
+    } catch {
+      setLayoutStatus("场景组封面上传失败，请确认已重启 node server.js", "warn");
+    } finally {
+      ui.sceneGroupCoverInput.value = "";
+    }
   });
   ui.gifLoopToggle?.addEventListener("change", () => {
     state.gifLoop = ui.gifLoopToggle.checked;
@@ -296,23 +392,27 @@ function bindEvents() {
   ui.sceneEndMode?.addEventListener("change", () => {
     state.sceneFlow.mode = ui.sceneEndMode.value;
     syncSceneFlowControls();
+    renderSceneGroupStructure();
     scheduleSaveLayout();
   });
   ui.sceneNextSceneSelect?.addEventListener("change", () => {
     state.sceneFlow.nextSceneId = ui.sceneNextSceneSelect.value;
+    renderSceneGroupStructure();
     scheduleSaveLayout();
   });
   ui.flowRouteRows.forEach((row) => {
     row.querySelector("[data-flow-keywords]")?.addEventListener("input", () => {
       state.sceneFlow.routes = readSceneFlowRoutesFromControls();
+      renderSceneGroupStructure();
       scheduleSaveLayout();
     });
     row.querySelector("[data-flow-scene]")?.addEventListener("change", () => {
       state.sceneFlow.routes = readSceneFlowRoutesFromControls();
+      renderSceneGroupStructure();
       scheduleSaveLayout();
     });
   });
-  ui.voiceButton.addEventListener("click", toggleVoiceListening);
+  on(ui.voiceButton, "click", toggleVoiceListening);
   ui.voiceTextSendButton?.addEventListener("click", () => sendManualVoiceText());
   ui.micLevelButton?.addEventListener("click", () => toggleMicLevelMonitor());
   ui.voiceTextInput?.addEventListener("keydown", (event) => {
@@ -327,30 +427,30 @@ function bindEvents() {
   ui.finalIntroModal?.addEventListener("click", (event) => {
     if (event.target === ui.finalIntroModal) closeFinalIntroModal();
   });
-  window.addEventListener("keydown", (event) => {
+  on(window, "keydown", (event) => {
     if (event.key === "Escape") closeFinalIntroModal();
   });
-  ui.scriptBeatSelect.addEventListener("change", () => {
+  on(ui.scriptBeatSelect, "change", () => {
     setVoiceStatus(`已切换到：${getCurrentBeat().title}`);
   });
 
-  ui.focalRange.addEventListener("input", () => {
+  on(ui.focalRange, "input", () => {
     state.focal = rangeToValue("focalRange", ui.focalRange.value);
     updateRangeDisplays();
     scheduleSaveLayout();
   });
-  ui.parallaxRange.addEventListener("input", () => {
+  on(ui.parallaxRange, "input", () => {
     state.parallax = rangeToValue("parallaxRange", ui.parallaxRange.value);
     updateRangeDisplays();
     scheduleSaveLayout();
   });
-  ui.gridToggle.addEventListener("change", () => {
+  on(ui.gridToggle, "change", () => {
     state.showGrid = ui.gridToggle.checked;
     scheduleSaveLayout();
   });
 
   for (const id of controls) {
-    ui[id].addEventListener("input", () => {
+    on(ui[id], "input", () => {
       const selected = getSelected();
       if (!selected) return;
       selected[rangeConfigs[id].itemKey] = rangeToValue(id, ui[id].value);
@@ -361,12 +461,12 @@ function bindEvents() {
     });
   }
 
-  canvas.addEventListener("pointermove", (event) => {
+  on(canvas, "pointermove", (event) => {
     const rect = canvas.getBoundingClientRect();
     state.pointerHead.x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
     state.pointerHead.y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
 
-    if (!state.dragging) return;
+    if (!isEditor || !state.dragging) return;
     const selected = getSelected();
     if (!selected) return;
     canvas.classList.add("dragging");
@@ -379,7 +479,8 @@ function bindEvents() {
     scheduleSaveLayout();
   });
 
-  canvas.addEventListener("pointerdown", (event) => {
+  on(canvas, "pointerdown", (event) => {
+    if (!isEditor) return;
     const hit = hitTest(event);
     if (!hit) return;
     state.selectedId = hit.id;
@@ -395,7 +496,7 @@ function bindEvents() {
     canvas.setPointerCapture(event.pointerId);
   });
 
-  canvas.addEventListener("pointerup", (event) => {
+  on(canvas, "pointerup", (event) => {
     const wasDragging = state.dragging !== null;
     state.dragging = null;
     canvas.classList.remove("dragging");
@@ -405,9 +506,11 @@ function bindEvents() {
     if (wasDragging) renderLayerList(); // rebuild once after drag ends (F-4)
   });
 
-  canvas.addEventListener(
+  on(
+    canvas,
     "wheel",
     (event) => {
+      if (!isEditor) return;
       const selected = getSelected();
       if (!selected) return;
       event.preventDefault();
@@ -420,7 +523,7 @@ function bindEvents() {
     { passive: false },
   );
 
-  window.addEventListener("pagehide", () => {
+  on(window, "pagehide", () => {
     stopCamera({ silent: true });
     stopMicLevelMonitor();
     if (state.voice.recognition) {
@@ -430,17 +533,65 @@ function bindEvents() {
   });
 }
 
+function on(target, type, handler, options) {
+  target?.addEventListener(type, handler, options);
+}
+
+function isMobileMotionDevice() {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches;
+}
+
+function showIntroEmbedUnsupported() {
+  const message = document.createElement("div");
+  message.className = "intro-embed-unsupported";
+  message.textContent = "该功能暂不支持PC端，请从移动端体验";
+  canvas.parentElement?.append(message);
+}
+
+function setupIntroEmbedMotionTracking() {
+  const updateFromOrientation = (event) => {
+    const gamma = clamp(Number(event.gamma || 0) / 28, -1, 1);
+    const beta = clamp((Number(event.beta || 0) - 45) / 36, -1, 1);
+    const alpha = Number(event.alpha || 0);
+    state.pointerHead.x = gamma;
+    state.pointerHead.y = clamp(-beta, -1, 1);
+    state.pointerHead.z = Number.isFinite(alpha) ? Math.sin((alpha * Math.PI) / 180) * 0.35 : 0;
+  };
+
+  const enable = async () => {
+    try {
+      const orientationEvent = globalThis.DeviceOrientationEvent;
+      if (typeof orientationEvent?.requestPermission === "function") {
+        const permission = await orientationEvent.requestPermission();
+        if (permission !== "granted") return;
+      }
+      window.addEventListener("deviceorientation", updateFromOrientation, true);
+    } catch {}
+  };
+
+  enable();
+  on(ui.playPauseButton, "click", enable, { once: true });
+  on(window, "pointerdown", enable, { once: true });
+}
+
 function resize() {
   const rect = canvas.getBoundingClientRect();
-  state.dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  state.width = Math.max(1, rect.width);
-  state.height = Math.max(1, rect.height);
-  canvas.width = Math.round(state.width * state.dpr);
-  canvas.height = Math.round(state.height * state.dpr);
+  const nextDpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const nextWidth = Math.max(1, rect.width);
+  const nextHeight = Math.max(1, rect.height);
+  const pixelWidth = Math.round(nextWidth * nextDpr);
+  const pixelHeight = Math.round(nextHeight * nextDpr);
+  if (state.width === nextWidth && state.height === nextHeight && state.dpr === nextDpr) return;
+  state.dpr = nextDpr;
+  state.width = nextWidth;
+  state.height = nextHeight;
+  canvas.width = pixelWidth;
+  canvas.height = pixelHeight;
   ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
 }
 
 async function addFiles(files) {
+  if (!isEditor) return;
   const valid = files.filter(isSupportedMediaFile);
   let nextIndex = state.items.length;
 
@@ -529,8 +680,9 @@ function hydrateVideoItem(asset, item) {
   video.muted = true;
   video.loop = shouldLoopVideoAsset(asset);
   video.playsInline = true;
-  video.autoplay = true;
+  video.autoplay = false;
   video.preload = "auto";
+  let hasRenderableFrame = false;
 
   const updateLayer = () => {
     syncControls();
@@ -554,13 +706,22 @@ function hydrateVideoItem(asset, item) {
   };
   const onFrame = () => {
     if (!video.videoWidth || !video.videoHeight) return;
+    if (hasRenderableFrame) {
+      video.loop = shouldLoopVideoItem(item);
+      if (!state.paused && video.paused) video.play().catch(() => {});
+      return;
+    }
+    hasRenderableFrame = true;
     clearTimeout(timer);
+    video.removeEventListener("loadeddata", onFrame);
+    video.removeEventListener("canplay", onFrame);
+    video.removeEventListener("playing", onFrame);
     item.media = video;
     item.mediaType = "video";
     item.status = asset.name.toLowerCase().endsWith(".webm") ? "WebM" : "MOV";
     item.thumbnail = makeVideoThumbnail(video);
     video.loop = shouldLoopVideoItem(item);
-    if (!state.paused) video.play().catch(() => {});
+    if (!state.paused && video.paused) video.play().catch(() => {});
     updateLayer();
   };
   const onError = () => fail("视频无法解码");
@@ -645,6 +806,10 @@ function isSupportedMediaFile(file) {
   return /image\/(png|gif)/.test(file.type) || isMovFile(file) || isWebmFile(file);
 }
 
+function isSupportedImageFile(file) {
+  return /^image\/(png|jpeg|webp|gif)$/.test(file.type) || /\.(png|jpe?g|webp|gif)$/i.test(file.name);
+}
+
 function isSupportedAudioFile(file) {
   return /^audio\//.test(file.type) || /\.(mp3|wav|ogg|m4a|aac)$/i.test(file.name);
 }
@@ -704,6 +869,10 @@ async function uploadAsset(file) {
   });
   if (!response.ok) throw new Error("asset upload failed");
   return response.json();
+}
+
+function isUploadedAsset(asset) {
+  return Boolean(asset?.url && asset.url.startsWith("/uploads/"));
 }
 
 function localAssetFromFile(file) {
@@ -785,8 +954,11 @@ async function loadInitialScene() {
   try {
     await loadSceneList();
     await loadAppSettings();
-    if (isFinal && !new URLSearchParams(window.location.search).has("scene")) {
-      state.currentSceneId = state.finalStartSceneId || state.currentSceneId;
+    if (isFinal) {
+      resetFinalPlaybackState();
+      state.currentSceneId = getFinalSceneGroup().finalStartSceneId || state.finalStartSceneId || "default";
+    } else if (isIntroDemo) {
+      state.currentSceneId = getActiveSceneGroup().finalStartSceneId || state.finalStartSceneId || "default";
     }
     syncSceneControls();
     const loaded = await loadSceneById(state.currentSceneId);
@@ -797,7 +969,7 @@ async function loadInitialScene() {
     state.loadingScene = false;
   }
 
-  if (!isViewer) {
+  if (isEditor) {
     seedDemoImages();
     syncSceneControls();
     syncControls();
@@ -857,7 +1029,9 @@ async function applySceneLayout(layout, sceneId, preloadedAssets = new Map()) {
 
   syncSceneControls();
   syncSceneFlowControls();
-  restartScenePlayback({ autoplay: isViewer || isFinal });
+  state.lastLayoutSaveSignature = getLayoutSaveSignature();
+  state.pendingLayoutSaveSignature = "";
+  restartScenePlayback({ autoplay: (isViewer || isFinal) && !isIntroEmbed });
   updateRangeDisplays();
   setLayoutStatus(hasItems ? `已切换：${state.currentSceneName}` : `空场景：${state.currentSceneName}`, hasItems ? "good" : "warn");
   state.loadingScene = false;
@@ -867,7 +1041,7 @@ async function applySceneLayout(layout, sceneId, preloadedAssets = new Map()) {
 
 async function loadSceneList() {
   if (!ui.sceneSelect) return;
-  const response = await fetch("/api/layout?list=1");
+  const response = await fetch("/api/layout?list=1&details=1");
   if (!response.ok) return;
   const payload = await response.json();
   state.scenes = Array.isArray(payload.scenes) ? payload.scenes : [];
@@ -886,8 +1060,22 @@ async function loadAppSettings() {
     const response = await fetch("/api/settings");
     if (!response.ok) return;
     const payload = await response.json();
-    const sceneId = payload.settings?.finalStartSceneId || "default";
-    state.finalStartSceneId = hasScene(sceneId) ? sceneId : "default";
+    const settings = normalizeAppSettings(payload.settings);
+    state.sceneGroups = settings.sceneGroups;
+    const requestedGroup = urlParams.get("group");
+    if (isIntroDemo) {
+      state.activeSceneGroupId = hasSceneGroup(requestedGroup) ? requestedGroup : settings.activeSceneGroupId;
+      state.finalSceneGroupId = state.activeSceneGroupId;
+    } else {
+      state.activeSceneGroupId = settings.activeSceneGroupId;
+      state.finalSceneGroupId = settings.finalSceneGroupId;
+      if (requestedGroup && hasSceneGroup(requestedGroup)) {
+        if (isFinal) state.finalSceneGroupId = requestedGroup;
+        else state.activeSceneGroupId = requestedGroup;
+      }
+    }
+    state.finalStartSceneId = isFinal ? getFinalSceneGroup().finalStartSceneId : getActiveSceneGroup().finalStartSceneId;
+    renderSceneGroupOptions();
     renderFinalStartSceneOptions();
   } catch {}
 }
@@ -897,44 +1085,393 @@ async function saveAppSettings() {
     const response = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ finalStartSceneId: state.finalStartSceneId }),
+      body: JSON.stringify(serializeAppSettings()),
     });
     if (!response.ok) throw new Error("settings save failed");
-    setLayoutStatus(`Final 首场景已设置为：${getSceneLabel(state.finalStartSceneId)}`, "good");
+    setLayoutStatus(`场景组已保存：${getSceneGroupLabel(state.activeSceneGroupId)}`, "good");
   } catch {
-    setLayoutStatus("Final 首场景设置保存失败", "warn");
+    setLayoutStatus("场景组设置保存失败", "warn");
   }
+}
+
+function normalizeAppSettings(settings = {}) {
+  const fallbackStart = hasScene(settings.finalStartSceneId) ? settings.finalStartSceneId : "default";
+  const sceneGroups = normalizeSceneGroups(settings.sceneGroups, fallbackStart);
+  const activeSceneGroupId = hasSceneGroup(settings.activeSceneGroupId, sceneGroups)
+    ? settings.activeSceneGroupId
+    : sceneGroups[0].id;
+  const finalSceneGroupId = hasSceneGroup(settings.finalSceneGroupId, sceneGroups)
+    ? settings.finalSceneGroupId
+    : activeSceneGroupId;
+  return { sceneGroups, activeSceneGroupId, finalSceneGroupId };
+}
+
+function normalizeSceneGroups(groups, fallbackStartSceneId = "default") {
+  const source = Array.isArray(groups) && groups.length
+    ? groups
+    : [{ id: "default-group", name: "默认场景组", finalStartSceneId: fallbackStartSceneId }];
+  const seen = new Set();
+  const normalized = source
+    .map((group, index) => {
+      const id = makeSceneGroupId(group?.id || group?.name || (index === 0 ? "default-group" : "scene-group"));
+      if (seen.has(id)) return null;
+      seen.add(id);
+      const finalStartSceneId = hasScene(group?.finalStartSceneId) ? group.finalStartSceneId : fallbackStartSceneId;
+      return {
+        id,
+        name: String(group?.name || (id === "default-group" ? "默认场景组" : id)).trim() || "默认场景组",
+        finalStartSceneId,
+        coverAsset: normalizeSceneGroupCoverAsset(group?.coverAsset),
+      };
+    })
+    .filter(Boolean);
+  return normalized.length
+    ? normalized
+    : [{ id: "default-group", name: "默认场景组", finalStartSceneId: fallbackStartSceneId }];
+}
+
+function serializeAppSettings() {
+  return {
+    finalStartSceneId: getFinalSceneGroup().finalStartSceneId || "default",
+    activeSceneGroupId: state.activeSceneGroupId,
+    finalSceneGroupId: state.finalSceneGroupId,
+    sceneGroups: state.sceneGroups,
+  };
+}
+
+function normalizeSceneGroupCoverAsset(asset) {
+  if (!asset || typeof asset !== "object") return null;
+  const url = asset.url || asset.assetUrl || "";
+  if (!url) return null;
+  return {
+    key: asset.key || asset.assetKey || url,
+    name: asset.name || decodeURIComponent(url.split("/").pop() || "scene-group-cover"),
+    url,
+    type: asset.type || asset.assetType || inferAssetType(url),
+    size: Number(asset.size || 0),
+  };
 }
 
 function hasScene(sceneId) {
   return state.scenes.some((scene) => scene.id === sceneId);
 }
 
+function hasSceneGroup(groupId, groups = state.sceneGroups) {
+  return groups.some((group) => group.id === groupId);
+}
+
+function getActiveSceneGroup() {
+  return state.sceneGroups.find((group) => group.id === state.activeSceneGroupId) || state.sceneGroups[0] || {
+    id: "default-group",
+    name: "默认场景组",
+    finalStartSceneId: "default",
+  };
+}
+
+function getFinalSceneGroup() {
+  return state.sceneGroups.find((group) => group.id === state.finalSceneGroupId) || getActiveSceneGroup();
+}
+
+function getSceneGroupLabel(groupId) {
+  const group = state.sceneGroups.find((item) => item.id === groupId);
+  return group?.name || groupId;
+}
+
+function updateActiveSceneGroup(patch) {
+  state.sceneGroups = state.sceneGroups.map((group) =>
+    group.id === state.activeSceneGroupId ? { ...group, ...patch } : group,
+  );
+  const active = getActiveSceneGroup();
+  state.finalStartSceneId = active.finalStartSceneId || state.finalStartSceneId || "default";
+}
+
 function renderSceneOptions() {
   if (!ui.sceneSelect) return;
-  ui.sceneSelect.innerHTML = "";
-  state.scenes.forEach((scene) => {
-    const option = document.createElement("option");
-    option.value = scene.id;
-    option.textContent = scene.id === "default" ? "默认场景" : scene.name;
-    ui.sceneSelect.append(option);
-  });
-  ui.sceneSelect.value = state.currentSceneId;
+  renderSceneGroupOptions();
+  populateSceneSelect(ui.sceneSelect, { selected: state.currentSceneId });
   renderFinalStartSceneOptions();
   renderSceneFlowOptions();
+  renderSceneGroupStructure();
+}
+
+function renderSceneGroupOptions() {
+  populateSceneGroupSelect(ui.sceneGroupSelect, state.activeSceneGroupId);
+  populateSceneGroupSelect(ui.finalSceneGroupSelect, state.finalSceneGroupId);
+  renderFinalSceneGroupCards();
+  syncSceneGroupCoverControls();
+}
+
+function syncSceneGroupCoverControls() {
+  if (!ui.sceneGroupCoverName) return;
+  const cover = getActiveSceneGroup().coverAsset;
+  ui.sceneGroupCoverName.textContent = cover?.name || "未设置封面";
+  ui.sceneGroupCoverName.classList.toggle("empty", !cover);
 }
 
 function renderFinalStartSceneOptions() {
   if (!ui.finalStartSceneSelect) return;
-  const selected = state.finalStartSceneId || ui.finalStartSceneSelect.value || "default";
-  ui.finalStartSceneSelect.innerHTML = "";
-  state.scenes.forEach((scene) => {
+  const selected = getActiveSceneGroup().finalStartSceneId || state.finalStartSceneId || ui.finalStartSceneSelect.value || "default";
+  populateSceneSelect(ui.finalStartSceneSelect, { selected: hasScene(selected) ? selected : "default" });
+}
+
+function populateSceneGroupSelect(select, selected = "") {
+  if (!select) return;
+  const fragment = document.createDocumentFragment();
+  state.sceneGroups.forEach((group) => {
     const option = document.createElement("option");
-    option.value = scene.id;
-    option.textContent = scene.id === "default" ? "默认场景" : scene.name || scene.id;
-    ui.finalStartSceneSelect.append(option);
+    option.value = group.id;
+    option.textContent = group.name;
+    fragment.append(option);
   });
-  ui.finalStartSceneSelect.value = hasScene(selected) ? selected : "default";
+  select.replaceChildren(fragment);
+  select.value = hasSceneGroup(selected) ? selected : state.sceneGroups[0]?.id || "";
+}
+
+function renderFinalSceneGroupCards() {
+  if (!ui.finalSceneGroupCards) return;
+  const fragment = document.createDocumentFragment();
+  state.sceneGroups.forEach((group) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.dataset.groupId = group.id;
+    card.className = `final-group-card${group.id === state.finalSceneGroupId ? " active" : ""}`;
+
+    const image = document.createElement("img");
+    image.className = "final-group-card-image";
+    image.alt = "";
+    image.loading = "lazy";
+    image.src = getSceneGroupPreviewUrl(group);
+    const copy = document.createElement("span");
+    copy.className = "final-group-card-copy";
+    const title = document.createElement("strong");
+    title.textContent = group.name;
+    copy.append(title);
+    card.append(image, copy);
+    fragment.append(card);
+  });
+  ui.finalSceneGroupCards.replaceChildren(fragment);
+  hydrateFinalSceneGroupPreviews();
+}
+
+function getSceneById(sceneId) {
+  return state.scenes.find((scene) => scene.id === sceneId);
+}
+
+function getSceneGroupPreviewUrl(group) {
+  return group.coverAsset?.url || state.finalGroupPreviewCache.get(group.id) || makeSceneGroupPreviewPlaceholder(group);
+}
+
+function makeSceneGroupPreviewPlaceholder(group) {
+  const scene = getSceneById(group.finalStartSceneId);
+  const buffer = makePlaceholderMedia(group.name, scene ? getSceneLabel(scene.id) : "未设置首场景");
+  return buffer.toDataURL("image/png");
+}
+
+function hydrateFinalSceneGroupPreviews() {
+  if (!ui.finalSceneGroupCards) return;
+  state.sceneGroups.forEach((group) => {
+    if (group.coverAsset?.url) return;
+    if (state.finalGroupPreviewCache.has(group.id)) return;
+    renderSceneGroupPreview(group)
+      .then((url) => {
+        state.finalGroupPreviewCache.set(group.id, url);
+        const image = ui.finalSceneGroupCards?.querySelector(`[data-group-id="${CSS.escape(group.id)}"] .final-group-card-image`);
+        if (image) image.src = url;
+      })
+      .catch(() => {});
+  });
+}
+
+async function renderSceneGroupPreview(group) {
+  const scene = getSceneById(group.finalStartSceneId);
+  const layout = scene?.layout;
+  if (!layout) return makeSceneGroupPreviewPlaceholder(group);
+  const buffer = document.createElement("canvas");
+  buffer.width = 320;
+  buffer.height = 180;
+  const context = buffer.getContext("2d");
+  context.fillStyle = "#0d1210";
+  context.fillRect(0, 0, buffer.width, buffer.height);
+  drawPreviewGrid(context, buffer.width, buffer.height);
+
+  const records = Array.isArray(layout.items) ? layout.items.slice(0, 5) : [];
+  const sorted = records.sort((a, b) => Number(b.z || 0) - Number(a.z || 0));
+  const media = await Promise.allSettled(sorted.map(loadPreviewMedia));
+  media.forEach((result, index) => {
+    if (result.status !== "fulfilled" || !result.value) return;
+    drawPreviewItem(context, result.value, sorted[index], buffer.width, buffer.height);
+  });
+
+  context.fillStyle = "rgba(0,0,0,0.56)";
+  context.fillRect(0, buffer.height - 34, buffer.width, 34);
+  context.fillStyle = "#f3f1e8";
+  context.font = "700 18px Inter, sans-serif";
+  context.fillText(shortenName(group.name), 14, buffer.height - 12);
+  return buffer.toDataURL("image/png");
+}
+
+function drawPreviewGrid(context, width, height) {
+  context.save();
+  context.strokeStyle = "rgba(139,215,197,0.14)";
+  context.lineWidth = 1;
+  for (let x = -width; x < width * 2; x += 28) {
+    context.beginPath();
+    context.moveTo(x, height);
+    context.lineTo(width / 2 + (x - width / 2) * 0.28, height * 0.45);
+    context.stroke();
+  }
+  for (let y = height * 0.48; y < height; y += 18) {
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+    context.stroke();
+  }
+  context.restore();
+}
+
+async function loadPreviewMedia(record) {
+  const asset = assetFromLayoutRecord(record);
+  if (!asset.url) return null;
+  if (isVideoAsset(asset)) {
+    const video = await preloadVideoAsset(asset);
+    return video.videoWidth ? video : null;
+  }
+  const image = await preloadImageAsset(asset.url);
+  return image;
+}
+
+function drawPreviewItem(context, media, record, width, height) {
+  const focal = 860;
+  const depth = focal + Number(record.z || 0);
+  const projectedScale = clamp(focal / Math.max(220, depth), 0.28, 2.2);
+  const x = width / 2 + Number(record.x || 0) * 0.2 * projectedScale;
+  const y = height * 0.48 + Number(record.y || 0) * 0.2 * projectedScale;
+  const mediaWidth = getMediaWidth(media);
+  const mediaHeight = getMediaHeight(media);
+  const base = Number(record.scale || 1) * projectedScale * 0.34;
+  const drawWidth = mediaWidth * base;
+  const drawHeight = mediaHeight * base;
+  context.save();
+  context.translate(x, y);
+  context.rotate(Number(record.rotation || 0));
+  context.globalAlpha = clamp(Number(record.alpha ?? 1), 0, 1);
+  context.drawImage(media, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  context.restore();
+}
+
+function renderSceneGroupStructure() {
+  const group = getActiveSceneGroup();
+  const graph = buildSceneGroupGraph(group);
+  if (ui.sceneLogicGroupName) ui.sceneLogicGroupName.textContent = group.name;
+  renderSceneGroupSceneList(graph);
+  renderSceneLogicGraph(graph);
+}
+
+function buildSceneGroupGraph(group = getActiveSceneGroup(), { includeCurrent = true } = {}) {
+  const startSceneId = hasScene(group.finalStartSceneId) ? group.finalStartSceneId : state.currentSceneId || "default";
+  const nodes = [];
+  const edges = [];
+  const seen = new Set();
+  const queued = [startSceneId].filter(Boolean);
+  while (queued.length && nodes.length < 80) {
+    const sceneId = queued.shift();
+    if (!sceneId || seen.has(sceneId)) continue;
+    seen.add(sceneId);
+    nodes.push(sceneId);
+    const flow = getSceneFlowForGraph(sceneId);
+    const nextEdges = getSceneFlowEdges(sceneId, flow);
+    nextEdges.forEach((edge) => {
+      edges.push(edge);
+      if (edge.to && !seen.has(edge.to)) queued.push(edge.to);
+    });
+  }
+  if (includeCurrent && !seen.has(state.currentSceneId)) nodes.push(state.currentSceneId);
+  return { group, startSceneId, nodes: nodes.filter(Boolean), edges };
+}
+
+function getSceneFlowForGraph(sceneId) {
+  if (sceneId === state.currentSceneId) return normalizeSceneFlow(state.sceneFlow);
+  const scene = state.scenes.find((item) => item.id === sceneId);
+  return normalizeSceneFlow(scene?.layout?.scene?.flow || scene?.layout?.scene?.sceneFlow);
+}
+
+function getSceneFlowEdges(sceneId, flow) {
+  if (flow.mode === "auto" && flow.nextSceneId) {
+    return [{ from: sceneId, to: flow.nextSceneId, label: "自动" }];
+  }
+  if (flow.mode === "dialog") {
+    return flow.routes
+      .filter((route) => route.sceneId)
+      .map((route) => ({ from: sceneId, to: route.sceneId, label: route.keywords || "关键词" }));
+  }
+  return [];
+}
+
+function renderSceneGroupSceneList(graph) {
+  if (!ui.sceneGroupSceneList) return;
+  const fragment = document.createDocumentFragment();
+  graph.nodes.forEach((sceneId, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.sceneId = sceneId;
+    button.className = `scene-group-chip${sceneId === state.currentSceneId ? " active" : ""}`;
+    button.textContent = `${index + 1}. ${getSceneLabel(sceneId)}`;
+    fragment.append(button);
+  });
+  if (!fragment.childNodes.length) {
+    const empty = document.createElement("span");
+    empty.className = "scene-group-empty";
+    empty.textContent = "当前组还没有可达场景";
+    fragment.append(empty);
+  }
+  ui.sceneGroupSceneList.replaceChildren(fragment);
+}
+
+function renderSceneLogicGraph(graph) {
+  if (!ui.sceneLogicGraph) return;
+  const fragment = document.createDocumentFragment();
+  const edgeMap = new Map();
+  graph.edges.forEach((edge) => {
+    if (!edge.to) return;
+    const key = `${edge.from}->${edge.to}`;
+    const labels = edgeMap.get(key) || [];
+    labels.push(edge.label);
+    edgeMap.set(key, labels);
+  });
+  graph.nodes.forEach((sceneId, index) => {
+    const node = document.createElement("button");
+    node.type = "button";
+    node.dataset.sceneId = sceneId;
+    node.className = `scene-logic-node${sceneId === state.currentSceneId ? " active" : ""}`;
+    node.innerHTML = `<span>${index + 1}</span><strong></strong>`;
+    node.querySelector("strong").textContent = getSceneLabel(sceneId);
+    fragment.append(node);
+
+    const outgoing = graph.edges.filter((edge) => edge.from === sceneId && edge.to);
+    outgoing.forEach((edge) => {
+      const branch = document.createElement("div");
+      branch.className = "scene-logic-edge";
+      const labels = edgeMap.get(`${edge.from}->${edge.to}`) || [edge.label];
+      branch.textContent = `${labels.join(" / ")} → ${getSceneLabel(edge.to)}`;
+      fragment.append(branch);
+    });
+  });
+  if (!fragment.childNodes.length) {
+    const empty = document.createElement("div");
+    empty.className = "scene-logic-empty";
+    empty.textContent = "选择首场景后会显示流程";
+    fragment.append(empty);
+  }
+  ui.sceneLogicGraph.replaceChildren(fragment);
+}
+
+function toggleSceneLogicPane() {
+  if (!ui.sceneLogicPane) return;
+  const minimized = ui.sceneLogicPane.classList.toggle("is-minimized");
+  if (ui.sceneLogicToggle) {
+    ui.sceneLogicToggle.textContent = minimized ? "+" : "−";
+    ui.sceneLogicToggle.setAttribute("aria-label", minimized ? "展开场景逻辑" : "最小化场景逻辑");
+  }
 }
 
 function renderSceneFlowOptions() {
@@ -943,20 +1480,27 @@ function renderSceneFlowOptions() {
     ...[...ui.flowRouteRows].map((row) => row.querySelector("[data-flow-scene]")),
   ].filter(Boolean);
   controls.forEach((select) => {
-    const selected = select.value;
-    select.innerHTML = "";
+    populateSceneSelect(select, { selected: select.value, includeEmpty: true, emptyLabel: "不指定" });
+  });
+}
+
+function populateSceneSelect(select, { selected = "", includeEmpty = false, emptyLabel = "" } = {}) {
+  if (!select) return;
+  const fragment = document.createDocumentFragment();
+  if (includeEmpty) {
     const empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "不指定";
-    select.append(empty);
-    state.scenes.forEach((scene) => {
-      const option = document.createElement("option");
-      option.value = scene.id;
-      option.textContent = scene.id === "default" ? "默认场景" : scene.name || scene.id;
-      select.append(option);
-    });
-    select.value = selected && [...select.options].some((option) => option.value === selected) ? selected : "";
+    empty.textContent = emptyLabel;
+    fragment.append(empty);
+  }
+  state.scenes.forEach((scene) => {
+    const option = document.createElement("option");
+    option.value = scene.id;
+    option.textContent = getSceneLabel(scene.id);
+    fragment.append(option);
   });
+  select.replaceChildren(fragment);
+  select.value = selected && [...select.options].some((option) => option.value === selected) ? selected : "";
 }
 
 function resolveSceneAlias(alias) {
@@ -983,7 +1527,9 @@ function syncSceneControls() {
   syncSceneMediaControls();
   syncSceneFlowControls();
   const demo = document.querySelector(".demo-link");
-  if (demo) demo.href = `./viewer.html?scene=${encodeURIComponent(state.currentSceneId)}`;
+  if (demo) {
+    demo.href = `./viewer.html?scene=${encodeURIComponent(state.currentSceneId)}&group=${encodeURIComponent(state.activeSceneGroupId)}`;
+  }
 }
 
 function syncSceneFlowControls() {
@@ -993,7 +1539,7 @@ function syncSceneFlowControls() {
   if (ui.realtimeReplyToggle) ui.realtimeReplyToggle.checked = state.realtimeReply;
   if (ui.sceneNextSceneSelect) ui.sceneNextSceneSelect.value = state.sceneFlow.nextSceneId || "";
   const flowMode = ui.sceneEndMode?.value || state.sceneFlow.mode || "none";
-  document.querySelectorAll("[data-flow-visible]").forEach((element) => {
+  ui.flowVisibleSections.forEach((element) => {
     element.hidden = element.dataset.flowVisible !== flowMode;
   });
   ui.flowRouteRows.forEach((row, index) => {
@@ -1159,7 +1705,7 @@ function isScenePlaybackFinished() {
 }
 
 async function handleSceneMediaEnded() {
-  if (!(isViewer || isFinal) || state.sceneEnded || !isScenePlaybackFinished()) return;
+  if (!(isViewer || isFinal || isIntroDemo) || state.sceneEnded || !isScenePlaybackFinished()) return;
   state.sceneEnded = true;
   if (state.sceneFlow.mode === "auto" && state.sceneFlow.nextSceneId) {
     setLayoutStatus(`场景结束，正在进入：${getSceneLabel(state.sceneFlow.nextSceneId)}`);
@@ -1207,7 +1753,7 @@ async function triggerSceneFlowKeywordSwitch(text) {
 async function switchScene(sceneId) {
   if (!sceneId) return;
   if (sceneId === state.currentSceneId) {
-    if (isViewer || isFinal) restartScenePlayback({ autoplay: true });
+    if (isViewer || isFinal || isIntroDemo) restartScenePlayback({ autoplay: !state.paused });
     return;
   }
   if (isFinal) {
@@ -1216,12 +1762,146 @@ async function switchScene(sceneId) {
   }
   setLayoutStatus("正在切换场景");
   const loaded = await loadSceneById(sceneId);
-  if (loaded || isViewer) updateSceneUrl();
+  if (loaded || isViewer || isIntroDemo) updateSceneUrl();
+}
+
+async function switchSceneGroup(groupId) {
+  if (!hasSceneGroup(groupId)) return;
+  state.activeSceneGroupId = groupId;
+  const group = getActiveSceneGroup();
+  state.finalStartSceneId = hasScene(group.finalStartSceneId) ? group.finalStartSceneId : "default";
+  renderSceneGroupOptions();
+  renderFinalStartSceneOptions();
+  renderSceneGroupStructure();
+  await saveAppSettings();
+  updateSceneUrl();
+  if (state.finalStartSceneId !== state.currentSceneId) await switchScene(state.finalStartSceneId);
+}
+
+async function switchFinalSceneGroup(groupId) {
+  if (!hasSceneGroup(groupId)) return;
+  state.finalSceneGroupId = groupId;
+  state.finalStartSceneId = getFinalSceneGroup().finalStartSceneId || "default";
+  renderSceneGroupOptions();
+  renderSceneGroupStructure();
+  updateSceneUrl();
+  await switchScene(state.finalStartSceneId);
+}
+
+async function createSceneGroup() {
+  if (!isEditor) return;
+  const name = window.prompt("请输入新场景组名称", "新场景组");
+  if (!name?.trim()) return;
+  const cleanName = name.trim().slice(0, 80);
+  const sceneId = makeSceneId(`${cleanName}-起始场景`);
+  const group = {
+    id: makeSceneGroupId(`${cleanName}-${Date.now().toString(36)}`),
+    name: cleanName,
+    finalStartSceneId: sceneId,
+  };
+  state.sceneGroups = [...state.sceneGroups, group];
+  state.activeSceneGroupId = group.id;
+  resetEditorToBlankScene(sceneId, `${cleanName} 起始场景`);
+  state.finalStartSceneId = sceneId;
+  renderSceneGroupOptions();
+  renderFinalStartSceneOptions();
+  renderSceneGroupStructure();
+  await saveLayoutNow();
+  await saveAppSettings();
+  updateSceneUrl();
+}
+
+function resetEditorToBlankScene(sceneId, sceneName) {
+  clearSceneMedia();
+  state.currentSceneId = sceneId;
+  state.currentSceneName = sceneName;
+  state.focal = 860;
+  state.parallax = 92;
+  state.showGrid = true;
+  state.sceneAudioAsset = null;
+  state.audioLoop = true;
+  state.gifLoop = true;
+  state.webmLoop = true;
+  state.ageRequired = false;
+  state.realtimeReply = false;
+  state.sceneFlow = normalizeSceneFlow();
+  state.sceneEnded = false;
+  restartScenePlayback({ autoplay: false });
+  ui.focalRange.value = String(valueToRange("focalRange", state.focal));
+  ui.parallaxRange.value = String(valueToRange("parallaxRange", state.parallax));
+  ui.gridToggle.checked = state.showGrid;
+  if (ui.sceneNameInput) ui.sceneNameInput.value = sceneName;
+  syncSceneMediaControls();
+  syncSceneFlowControls();
+  syncControls();
+  renderLayerList();
+}
+
+async function renameActiveSceneGroup() {
+  if (!isEditor) return;
+  const group = getActiveSceneGroup();
+  const name = window.prompt("请输入新的场景组名称", group.name);
+  if (!name?.trim()) return;
+  state.sceneGroups = state.sceneGroups.map((item) =>
+    item.id === group.id ? { ...item, name: name.trim().slice(0, 80) } : item,
+  );
+  renderSceneGroupOptions();
+  renderSceneGroupStructure();
+  await saveAppSettings();
+}
+
+async function deleteActiveSceneGroup() {
+  if (!isEditor) return;
+  const group = getActiveSceneGroup();
+  if (state.sceneGroups.length <= 1) {
+    setLayoutStatus("至少需要保留一个场景组", "warn");
+    return;
+  }
+  const groupScenes = getDeletableSceneIdsForGroup(group.id);
+  const ok = window.confirm(
+    `确定删除场景组“${group.name}”吗？\n将同时删除该组独占的 ${groupScenes.length} 个场景。其他场景组引用的场景会保留。`,
+  );
+  if (!ok) return;
+
+  const remainingGroups = state.sceneGroups.filter((item) => item.id !== group.id);
+  state.sceneGroups = remainingGroups;
+  state.activeSceneGroupId = remainingGroups[0].id;
+  if (state.finalSceneGroupId === group.id) state.finalSceneGroupId = remainingGroups[0].id;
+  state.finalStartSceneId = getActiveSceneGroup().finalStartSceneId || "default";
+
+  await Promise.all(groupScenes.map((sceneId) => deleteSceneLayout(sceneId)));
+  await saveAppSettings();
+  await loadSceneList();
+  renderSceneGroupOptions();
+  renderFinalStartSceneOptions();
+  renderSceneGroupStructure();
+  updateSceneUrl();
+  await switchScene(state.finalStartSceneId);
+}
+
+function getDeletableSceneIdsForGroup(groupId) {
+  const group = state.sceneGroups.find((item) => item.id === groupId);
+  if (!group) return [];
+  const groupSceneIds = new Set(buildSceneGroupGraph(group, { includeCurrent: false }).nodes);
+  const remainingSceneIds = new Set();
+  state.sceneGroups
+    .filter((item) => item.id !== groupId)
+    .forEach((item) =>
+      buildSceneGroupGraph(item, { includeCurrent: false }).nodes.forEach((sceneId) => remainingSceneIds.add(sceneId)),
+    );
+  return [...groupSceneIds].filter((sceneId) => sceneId !== "default" && !remainingSceneIds.has(sceneId));
+}
+
+async function deleteSceneLayout(sceneId) {
+  const response = await fetch(`/api/layout?id=${encodeURIComponent(sceneId)}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`delete scene failed: ${sceneId}`);
 }
 
 function updateSceneUrl() {
   const url = new URL(window.location.href);
   url.searchParams.set("scene", state.currentSceneId);
+  const groupId = isFinal && !isIntroDemo ? state.finalSceneGroupId : state.activeSceneGroupId;
+  if (groupId) url.searchParams.set("group", groupId);
   window.history.replaceState({}, "", url);
 }
 
@@ -1593,29 +2273,35 @@ function serializeLayout() {
   };
 }
 
+function getLayoutSaveSignature(payload = serializeLayout()) {
+  return JSON.stringify(payload);
+}
+
 function scheduleSaveLayout() {
-  if (state.loadingScene || isViewer) return;
+  if (state.loadingScene || !isEditor) return;
+  const signature = getLayoutSaveSignature();
+  if (signature === state.lastLayoutSaveSignature && !state.layoutSaveTimer) return;
+  state.pendingLayoutSaveSignature = signature;
   clearTimeout(state.layoutSaveTimer);
   setLayoutStatus("有更改，准备自动保存", "warn");
   state.layoutSaveTimer = setTimeout(() => saveLayoutNow(), 650);
 }
 
 async function saveLayoutNow() {
-  if (isViewer) return;
+  if (!isEditor) return;
   try {
-    const sceneName =
-      state.currentSceneId === "default"
-        ? "默认场景"
-        : ui.sceneNameInput?.value?.trim() || state.currentSceneName;
+    const payload = serializeLayout();
     const response = await fetch("/api/layout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...serializeLayout(), id: state.currentSceneId, name: sceneName }),
+      body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error("save failed");
     const result = await response.json();
     state.currentSceneId = result.id || state.currentSceneId;
-    state.currentSceneName = result.name || sceneName;
+    state.currentSceneName = result.name || payload.name;
+    state.lastLayoutSaveSignature = state.pendingLayoutSaveSignature || getLayoutSaveSignature(payload);
+    state.pendingLayoutSaveSignature = "";
     await loadSceneList();
     syncSceneControls();
     setLayoutStatus(`已保存：${state.currentSceneName}`, "good");
@@ -1625,7 +2311,7 @@ async function saveLayoutNow() {
 }
 
 async function saveAsLayout() {
-  if (isViewer) return;
+  if (!isEditor) return;
   const name = window.prompt("请输入新场景名称", `${ui.sceneNameInput?.value || "新场景"} 副本`);
   if (!name) return;
   state.currentSceneId = makeSceneId(name);
@@ -1645,6 +2331,17 @@ function makeSceneId(name) {
   return `${base}-${Date.now().toString(36)}`;
 }
 
+function makeSceneGroupId(name) {
+  return (
+    String(name || "default-group")
+      .trim()
+      .toLowerCase()
+      .replace(/[^\w\u4e00-\u9fa5.-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "default-group"
+  );
+}
+
 function setLayoutStatus(message, tone = "") {
   if (!ui.layoutStatus) return;
   ui.layoutStatus.textContent = message;
@@ -1655,6 +2352,8 @@ function setLayoutStatus(message, tone = "") {
 function inferAssetType(url = "") {
   if (/\.gif$/i.test(url)) return "image/gif";
   if (/\.png$/i.test(url)) return "image/png";
+  if (/\.jpe?g$/i.test(url)) return "image/jpeg";
+  if (/\.webp$/i.test(url)) return "image/webp";
   if (/\.mov$/i.test(url)) return "video/quicktime";
   if (/\.webm$/i.test(url)) return "video/webm";
   if (/\.mp4$/i.test(url)) return "video/mp4";
@@ -1843,7 +2542,7 @@ function drawItem(item) {
     const projection = project(item);
     const w = getMediaWidth(item.media) * item.scale * projection.scale;
     const h = getMediaHeight(item.media) * item.scale * projection.scale;
-    if (item.id === state.selectedId && !isViewer) drawSelection(projection, w, h, item.rotation);
+    if (item.id === state.selectedId && isEditor) drawSelection(projection, w, h, item.rotation);
     return;
   }
   if (item.mediaType === "video" && item.media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -1873,7 +2572,7 @@ function drawItem(item) {
   ctx.globalAlpha = 1;
   ctx.restore();
 
-  if (selected && !isViewer) drawSelection(projection, w, h, item.rotation);
+  if (selected && isEditor) drawSelection(projection, w, h, item.rotation);
 }
 
 function drawSelection(projection, w, h, rotation) {
@@ -1910,7 +2609,7 @@ function updateGifOverlays() {
     element.style.zIndex = String(1000 + index);
     element.style.opacity = String(item.alpha);
     element.style.outline =
-      item.id === state.selectedId && !isViewer ? "2px dashed rgba(139,215,197,0.9)" : "0";
+      item.id === state.selectedId && isEditor ? "2px dashed rgba(139,215,197,0.9)" : "0";
     element.classList.toggle("paused", state.paused);
     syncGifPauseFrame(item.id, element);
     if (element.tagName === "CANVAS") advanceGifPlayer(item.id);
@@ -1950,6 +2649,7 @@ function ensureGifOverlayElement(item) {
 
     if (shouldUseCanvas) {
       const player = {
+        id: item.id,
         canvas: newElement,
         context: newElement.getContext("2d"),
         frames: [],
@@ -1988,7 +2688,22 @@ async function decodeGifFrames(player) {
     if (!player.cancelled) drawGifPlayerFrame(player);
   } catch {
     player.decoding = false;
+    player.failed = true;
+    if (!player.cancelled) fallbackGifPlayerToImage(player);
   }
+}
+
+function fallbackGifPlayerToImage(player) {
+  const current = state.gifElements.get(player.id);
+  if (current !== player.canvas) return;
+  const image = document.createElement("img");
+  image.className = "gif-layer";
+  image.alt = "";
+  image.src = player.source;
+  player.canvas.replaceWith(image);
+  state.gifElements.set(player.id, image);
+  releaseGifPlayer(player);
+  state.gifPlayers.delete(player.id);
 }
 
 function normalizeGifFrameDuration(duration) {
@@ -2095,11 +2810,13 @@ function resumeGifElement(element) {
 }
 
 function togglePlayback() {
+  const wasPaused = state.paused;
   state.paused = !state.paused;
   ui.playPauseButton?.classList.toggle("paused", state.paused);
   ui.playPauseButton?.classList.toggle("playing", !state.paused);
   ui.playPauseButton?.setAttribute("aria-label", state.paused ? "播放画面" : "暂停画面");
   if (!state.paused) {
+    if (isIntroEmbed && wasPaused) restartScenePlayback({ autoplay: true });
     state.gifState.forEach((gs) => {
       gs.pauseFrame?.remove();
       gs.pauseFrame = null;
@@ -2134,11 +2851,40 @@ function togglePlayback() {
     if (state.paused) ui.sceneAudio.pause();
     else playSceneAudio();
   }
+  if (isFinal) {
+    if (state.paused) showFinalGroupRail();
+    else scheduleFinalGroupRailHide(1500);
+  }
 }
 
 function closeFinalIntroModal() {
   if (!ui.finalIntroModal || ui.finalIntroModal.hidden) return;
   ui.finalIntroModal.hidden = true;
+  if (isFinal && !state.paused) scheduleFinalGroupRailHide(1500);
+}
+
+function showFinalGroupRail() {
+  if (!ui.finalGroupRail) return;
+  clearTimeout(state.finalGroupRailTimer);
+  ui.finalGroupRail.classList.remove("is-collapsed");
+}
+
+function resetFinalPlaybackState() {
+  if (!isFinal) return;
+  state.paused = true;
+  ui.playPauseButton?.classList.add("paused");
+  ui.playPauseButton?.classList.remove("playing");
+  ui.playPauseButton?.setAttribute("aria-label", "鎾斁鐢婚潰");
+  showFinalGroupRail();
+}
+
+function scheduleFinalGroupRailHide(delay = 1000) {
+  if (!ui.finalGroupRail || !isFinal) return;
+  clearTimeout(state.finalGroupRailTimer);
+  state.finalGroupRailTimer = window.setTimeout(() => {
+    if (state.paused) return;
+    ui.finalGroupRail.classList.add("is-collapsed");
+  }, delay);
 }
 
 function drawReticle() {
@@ -2161,7 +2907,7 @@ function project(item) {
   const cameraY = head.y * state.parallax * 1.05;
   const cameraZ = head.z * 120;
   const depth = state.focal + item.z - cameraZ;
-  const scale = clamp(state.focal / Math.max(220, depth), 0.28, 2.2);
+  const scale = clamp(state.focal / Math.max(220, depth), 0.28, 2.2) * (isIntroEmbed ? introEmbedProjectionScale : 1);
   const vanish = getVanishingPoint();
   return {
     x: vanish.x + (item.x - cameraX) * scale,
@@ -2199,27 +2945,37 @@ function hitTest(event) {
 }
 
 function renderLayerList() {
-  ui.layerList.innerHTML = "";
+  if (!ui.layerList) return;
+  const fragment = document.createDocumentFragment();
   const nearFirst = [...state.items].sort((a, b) => a.z - b.z);
   for (const item of nearFirst) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `layer-item${item.id === state.selectedId ? " selected" : ""}`;
-    button.innerHTML = `
-      <span class="layer-thumb" style="background-image:url('${item.thumbnail}')"></span>
-      <span class="layer-copy">
-        <span class="layer-name">${escapeHTML(item.name)}</span>
-        <span class="layer-status">${escapeHTML(item.status || item.mediaType)}</span>
-      </span>
-      <span class="layer-depth">${Math.round(item.z)}</span>
-    `;
-    button.addEventListener("click", () => {
-      state.selectedId = item.id;
-      syncControls();
-      renderLayerList();
-    });
-    ui.layerList.append(button);
+    button.dataset.layerId = item.id;
+
+    const thumb = document.createElement("span");
+    thumb.className = "layer-thumb";
+    thumb.style.backgroundImage = `url("${String(item.thumbnail || "").replace(/"/g, "%22")}")`;
+
+    const copy = document.createElement("span");
+    copy.className = "layer-copy";
+    const name = document.createElement("span");
+    name.className = "layer-name";
+    name.textContent = item.name;
+    const status = document.createElement("span");
+    status.className = "layer-status";
+    status.textContent = item.status || item.mediaType;
+    copy.append(name, status);
+
+    const depth = document.createElement("span");
+    depth.className = "layer-depth";
+    depth.textContent = String(Math.round(item.z));
+
+    button.append(thumb, copy, depth);
+    fragment.append(button);
   }
+  ui.layerList.replaceChildren(fragment);
 }
 
 function syncControls() {
@@ -3511,19 +4267,6 @@ function degreesToRadians(value) {
 
 function radiansToDegrees(value) {
   return (value * 180) / Math.PI;
-}
-
-function escapeHTML(value) {
-  return value.replace(/[&<>"']/g, (char) => {
-    const map = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    };
-    return map[char];
-  });
 }
 
 function makeId() {

@@ -33,6 +33,7 @@ const xfyunVoiceOptions = new Set([
 const dataDir = path.join(rootDir, "data");
 const uploadsDir = path.join(rootDir, "uploads");
 const dbPath = path.join(dataDir, "scene-layout-db.json");
+const maxUploadBytes = 512 * 1024 * 1024;
 
 // DB cache, write mutex, and debounced persist (B-1, B-6, A-2)
 let dbCache = null;
@@ -44,7 +45,11 @@ const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
   ".gif": "image/gif",
   ".mov": "video/quicktime",
   ".mp4": "video/mp4",
@@ -57,7 +62,21 @@ const mimeTypes = {
   ".txt": "text/plain; charset=utf-8",
 };
 
-const mediaExtensions = new Set([".png", ".gif", ".mov", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".aac"]);
+const mediaExtensions = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".mov",
+  ".mp4",
+  ".webm",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".m4a",
+  ".aac",
+]);
 const compressibleExtensions = new Set([".html", ".js", ".css", ".json", ".txt"]);
 
 // In-memory gzip cache: filePath → { mtime, buffer } (B-3)
@@ -162,12 +181,17 @@ async function handleRequest(request, response) {
 
     await serveStaticFile(url.pathname, request, response);
   } catch (error) {
+    if (response.writableEnded) return;
     log("error", "unhandled_error", {
       method: request.method,
       path: request.url.split("?")[0],
       error: error.message,
     });
-    sendJson(response, 500, { error: "server_error", message: error.message });
+    const status = error.statusCode || 500;
+    sendJson(response, status, {
+      error: error.code || (status === 413 ? "payload_too_large" : "server_error"),
+      message: error.message,
+    });
   }
 }
 
@@ -209,6 +233,17 @@ async function handleLayout(request, response, url) {
     return;
   }
 
+  if (request.method === "DELETE") {
+    const id = sanitizeSceneId(url.searchParams.get("id") || "");
+    if (!id || id === "default") {
+      sendJson(response, 400, { error: "invalid_scene_id" });
+      return;
+    }
+    const deleted = await deleteLayoutPayload(id);
+    sendJson(response, 200, { ok: true, id, deleted });
+    return;
+  }
+
   sendJson(response, 405, { error: "method_not_allowed" });
 }
 
@@ -219,10 +254,13 @@ async function handleSettings(request, response) {
   }
 
   if (request.method === "POST") {
-    const body = await readJsonBody(request, 32 * 1024);
-    const settings = await writeSettings({
-      finalStartSceneId: sanitizeSceneId(body.finalStartSceneId || "default"),
-    });
+    const body = await readJsonBody(request, 256 * 1024);
+    const nextSettings = {};
+    if (Object.hasOwn(body, "finalStartSceneId")) nextSettings.finalStartSceneId = sanitizeSceneId(body.finalStartSceneId);
+    if (Object.hasOwn(body, "activeSceneGroupId")) nextSettings.activeSceneGroupId = sanitizeSceneGroupId(body.activeSceneGroupId);
+    if (Object.hasOwn(body, "finalSceneGroupId")) nextSettings.finalSceneGroupId = sanitizeSceneGroupId(body.finalSceneGroupId);
+    if (Array.isArray(body.sceneGroups)) nextSettings.sceneGroups = body.sceneGroups;
+    const settings = await writeSettings(nextSettings);
     sendJson(response, 200, { ok: true, settings });
     return;
   }
@@ -243,11 +281,20 @@ async function handleAssets(request, response, url) {
       sendJson(response, 415, { error: "unsupported_media_type" });
       return;
     }
+    const contentLength = Number(request.headers["content-length"] || 0);
+    if (contentLength > maxUploadBytes) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
 
     await fs.promises.mkdir(uploadsDir, { recursive: true });
     const finalName = await uniqueFilename(uploadsDir, filename);
     const filePath = path.join(uploadsDir, finalName);
-    const buffer = await readRawBody(request, 512 * 1024 * 1024);
+    const buffer = await readRawBody(request, maxUploadBytes);
+    if (!buffer.length) {
+      sendJson(response, 400, { error: "empty_upload" });
+      return;
+    }
     await fs.promises.writeFile(filePath, buffer);
     assetsCache = null; // invalidate cache after upload (B-5)
     log("info", "asset_uploaded", { filename: finalName, bytes: buffer.length, ext });
@@ -670,9 +717,14 @@ async function serveStaticFile(pathname, request, response) {
       response.end();
       return;
     }
-    const start = match[1] ? Number(match[1]) : 0;
-    const end = match[2] ? Number(match[2]) : stat.size - 1;
-    if (start >= stat.size || end >= stat.size || start > end) {
+    let start = match[1] ? Number(match[1]) : 0;
+    let end = match[2] ? Number(match[2]) : stat.size - 1;
+    if (!match[1] && match[2]) {
+      const suffixLength = Number(match[2]);
+      start = Math.max(0, stat.size - suffixLength);
+      end = stat.size - 1;
+    }
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= stat.size || end >= stat.size || start > end) {
       response.writeHead(416, { "Content-Range": `bytes */${stat.size}` });
       response.end();
       return;
@@ -795,7 +847,10 @@ function readJsonBody(request, maxBytes) {
     request.on("data", (chunk) => {
       raw += chunk;
       if (Buffer.byteLength(raw, "utf8") > maxBytes) {
-        reject(new Error("Request body too large."));
+        const error = new Error("Request body too large.");
+        error.statusCode = 413;
+        error.code = "payload_too_large";
+        reject(error);
         request.destroy();
       }
     });
@@ -817,7 +872,10 @@ function readRawBody(request, maxBytes) {
     request.on("data", (chunk) => {
       size += chunk.length;
       if (size > maxBytes) {
-        reject(new Error("Request body too large."));
+        const error = new Error("Request body too large.");
+        error.statusCode = 413;
+        error.code = "payload_too_large";
+        reject(error);
         request.destroy();
         return;
       }
@@ -896,6 +954,14 @@ async function writeLayoutPayload(id, name, payload) {
   schedulePersist();
 }
 
+async function deleteLayoutPayload(id) {
+  const db = await readDatabase();
+  if (!db.layouts?.[id]) return false;
+  delete db.layouts[id];
+  schedulePersist();
+  return true;
+}
+
 async function readSettings() {
   const db = await readDatabase();
   return normalizeSettings(db.settings, db.layouts);
@@ -909,9 +975,70 @@ async function writeSettings(nextSettings) {
 }
 
 function normalizeSettings(settings = {}, layouts = {}) {
-  const finalStartSceneId = sanitizeSceneId(settings.finalStartSceneId || "default");
+  const finalStartSceneId = layouts[sanitizeSceneId(settings.finalStartSceneId || "default")]
+    ? sanitizeSceneId(settings.finalStartSceneId || "default")
+    : "default";
+  const sceneGroups = normalizeSceneGroups(settings.sceneGroups, layouts, finalStartSceneId);
+  const activeSceneGroupId = sceneGroups.some((group) => group.id === settings.activeSceneGroupId)
+    ? settings.activeSceneGroupId
+    : sceneGroups[0].id;
+  const finalSceneGroupId = sceneGroups.some((group) => group.id === settings.finalSceneGroupId)
+    ? settings.finalSceneGroupId
+    : activeSceneGroupId;
   return {
-    finalStartSceneId: layouts[finalStartSceneId] ? finalStartSceneId : "default",
+    finalStartSceneId,
+    activeSceneGroupId,
+    finalSceneGroupId,
+    sceneGroups,
+  };
+}
+
+function normalizeSceneGroups(groups, layouts, fallbackStartSceneId) {
+  const source = Array.isArray(groups) && groups.length
+    ? groups
+    : [{ id: "default-group", name: "默认场景组", finalStartSceneId: fallbackStartSceneId }];
+  const seen = new Set();
+  const normalized = source
+    .map((group, index) => {
+      const id = sanitizeSceneGroupId(group?.id || (index === 0 ? "default-group" : group?.name));
+      if (seen.has(id)) return null;
+      seen.add(id);
+      const startSceneId = sanitizeSceneId(group?.finalStartSceneId || group?.startSceneId || fallbackStartSceneId);
+      return {
+        id,
+        name: sanitizeSceneGroupName(group?.name || (id === "default-group" ? "默认场景组" : id)),
+        finalStartSceneId: layouts[startSceneId] ? startSceneId : fallbackStartSceneId,
+        coverAsset: normalizeSceneGroupCoverAsset(group?.coverAsset),
+      };
+    })
+    .filter(Boolean);
+  return normalized.length
+    ? normalized
+    : [{ id: "default-group", name: "默认场景组", finalStartSceneId: fallbackStartSceneId }];
+}
+
+function sanitizeSceneGroupId(value) {
+  return String(value || "default-group")
+    .trim()
+    .replace(/[^\w\u4e00-\u9fa5.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "default-group";
+}
+
+function sanitizeSceneGroupName(value) {
+  return String(value || "默认场景组").trim().slice(0, 80) || "默认场景组";
+}
+
+function normalizeSceneGroupCoverAsset(asset) {
+  if (!asset || typeof asset !== "object") return null;
+  const url = String(asset.url || asset.assetUrl || "");
+  if (!/^\/?uploads\//.test(url)) return null;
+  return {
+    key: String(asset.key || asset.assetKey || url),
+    name: String(asset.name || path.basename(url) || "scene-group-cover").slice(0, 120),
+    url,
+    type: String(asset.type || asset.assetType || getAssetType(url)),
+    size: Number(asset.size || 0),
   };
 }
 
@@ -994,8 +1121,34 @@ function normalizeLayoutPayload(raw, id, name) {
     id,
     name: id === "default" ? "默认场景" : name || payload.name || id,
     scene: payload.scene || {},
-    items: Array.isArray(payload.items) ? payload.items : [],
+    items: Array.isArray(payload.items) ? payload.items.filter(isPlainObject).map(normalizeLayoutItem) : [],
   };
+}
+
+function normalizeLayoutItem(item) {
+  const next = { ...item };
+  next.id = String(next.id || crypto.randomUUID());
+  next.name = String(next.name || next.assetKey || "asset").slice(0, 120);
+  next.assetUrl = String(next.assetUrl || next.src || "");
+  next.assetKey = String(next.assetKey || next.assetUrl || "");
+  next.assetType = String(next.assetType || "");
+  next.x = finiteNumber(next.x, 0);
+  next.y = finiteNumber(next.y, 0);
+  next.z = finiteNumber(next.z, 0);
+  next.scale = finiteNumber(next.scale, 1);
+  next.rotation = finiteNumber(next.rotation, 0);
+  next.tilt = finiteNumber(next.tilt, 0);
+  next.alpha = finiteNumber(next.alpha, 1);
+  return next;
+}
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function safeJsonParse(value) {
