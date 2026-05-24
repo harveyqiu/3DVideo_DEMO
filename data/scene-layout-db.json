@@ -2810,9 +2810,9 @@
     }
   },
   "settings": {
-    "finalStartSceneId": "t1-起始场景-mpjcb34r",
+    "finalStartSceneId": "a1-mos899qj",
     "activeSceneGroupId": "default-group",
-    "finalSceneGroupId": "t1-mpjcb34r",
+    "finalSceneGroupId": "default-group",
     "sceneGroups": [
       {
         "id": "default-group",

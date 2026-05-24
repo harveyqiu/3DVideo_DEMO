@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Intro 场景组演示</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-mode="intro-demo" class="intro-demo-page">
+    <div id="app" class="intro-demo-app">
+      <main class="stage-wrap intro-demo-stage">
+        <canvas id="stage" aria-label="Intro 场景组演示画布"></canvas>
+        <div id="mediaOverlay" class="media-overlay" aria-hidden="true"></div>
+        <audio id="sceneAudio" preload="auto"></audio>
+
+        <div class="intro-demo-dock">
+          <button
+            id="playPauseButton"
+            class="play-pause-button paused"
+            type="button"
+            aria-label="播放画面"
+            title="播放 / 暂停"
+          >
+            <span class="pause-icon" aria-hidden="true"></span>
+            <span class="play-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <span id="layoutStatus" class="intro-demo-status">等待播放</span>
+      </main>
+
+      <div class="hidden-controls" aria-hidden="true">
+        <input id="fileInput" type="file" />
+        <button id="cameraButton" type="button"></button>
+        <button id="autoLayoutButton" type="button"></button>
+        <button id="saveLayoutButton" type="button"></button>
+        <button id="saveAsLayoutButton" type="button"></button>
+        <input id="sceneAudioInput" type="file" />
+        <span id="sceneAudioName"></span>
+        <input id="gifLoopToggle" type="checkbox" checked />
+        <input id="audioLoopToggle" type="checkbox" checked />
+        <input id="webmLoopToggle" type="checkbox" checked />
+        <input id="ageRequiredToggle" type="checkbox" />
+        <input id="realtimeReplyToggle" type="checkbox" />
+        <select id="sceneEndMode">
+          <option value="none">none</option>
+          <option value="auto">auto</option>
+          <option value="dialog">dialog</option>
+        </select>
+        <select id="sceneNextSceneSelect"><option value="">none</option></select>
+        <div data-flow-route>
+          <input data-flow-keywords type="text" />
+          <select data-flow-scene><option value="">none</option></select>
+        </div>
+        <select id="sceneSelect"><option value="default">默认场景</option></select>
+        <input id="sceneNameInput" type="text" value="默认场景" />
+        <button id="exportButton" type="button"></button>
+        <button id="deleteButton" type="button"></button>
+        <div id="layerList"></div>
+        <video id="cameraPreview" autoplay playsinline muted></video>
+        <select id="cameraSelect"><option value="">默认摄像头</option></select>
+        <span id="cameraDiagnostics"></span>
+        <strong id="trackingState"></strong>
+        <span id="trackingMeta"></span>
+        <button id="voiceButton" type="button"></button>
+        <span id="voiceStatus"></span>
+        <p id="voiceTranscript"></p>
+        <p id="voiceReply"></p>
+        <p id="voiceCaptionPreview"></p>
+        <button id="micLevelButton" type="button"></button>
+        <span id="micLevelStatus"></span>
+        <span id="micLevelBar"></span>
+        <pre id="kimiRequestDebug"></pre>
+        <pre id="kimiResponseDebug"></pre>
+        <select id="scriptBeatSelect"><option value="opening">opening</option></select>
+        <input id="focalRange" type="range" min="0" max="100" value="50" />
+        <input id="parallaxRange" type="range" min="0" max="100" value="51" />
+        <input id="gridToggle" type="checkbox" checked />
+        <input id="xRange" type="range" min="0" max="100" value="50" />
+        <input id="yRange" type="range" min="0" max="100" value="50" />
+        <input id="zRange" type="range" min="0" max="100" value="21" />
+        <input id="scaleRange" type="range" min="0" max="100" value="50" />
+        <input id="rotationRange" type="range" min="0" max="100" value="50" />
+        <input id="tiltRange" type="range" min="0" max="100" value="50" />
+        <span id="focalValue"></span>
+        <span id="parallaxValue"></span>
+        <span id="xValue"></span>
+        <span id="yValue"></span>
+        <span id="zValue"></span>
+        <span id="scaleValue"></span>
+        <span id="rotationValue"></span>
+        <span id="tiltValue"></span>
+      </div>
+    </div>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

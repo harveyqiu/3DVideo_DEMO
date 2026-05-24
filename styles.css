@@ -302,8 +302,13 @@ body.intro-page {
 
 .intro-media {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
+}
+
+.intro-doc-row {
+  border-top: 1px solid var(--line);
+  padding: 0 0 34px;
 }
 
 .intro-video-panel video,
@@ -321,7 +326,25 @@ body.intro-page {
   display: block;
 }
 
+.intro-demo-panel {
+  display: grid;
+  align-content: start;
+}
+
+.intro-demo-frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 18px;
+  background: #050706;
+}
+
 .intro-doc-panel {
+  width: min(760px, 100%);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 20px;
@@ -1638,6 +1661,77 @@ label strong {
 
 .final-camera-module #trackingMeta {
   color: var(--muted);
+}
+
+body.intro-embed-final .final-camera-module,
+body.intro-embed-final .final-group-rail,
+body.intro-embed-final .final-interaction,
+body.intro-embed-final .final-intro-modal,
+body.intro-embed-final .stage-subtitle {
+  display: none !important;
+}
+
+body.intro-embed-final .final-control-dock {
+  left: 14px;
+  bottom: 14px;
+  z-index: 12;
+}
+
+body.intro-embed-final .play-pause-button {
+  width: 50px;
+  height: 50px;
+  min-height: 50px;
+  background: rgba(10, 13, 12, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.intro-embed-unsupported {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(6, 8, 7, 0.9);
+  color: var(--text);
+  font-size: clamp(18px, 3vw, 26px);
+  font-weight: 800;
+  text-align: center;
+}
+
+.intro-demo-page,
+.intro-demo-app,
+.intro-demo-stage {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #050706;
+}
+
+.intro-demo-stage {
+  position: relative;
+}
+
+.intro-demo-dock {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 12;
+}
+
+.intro-demo-status {
+  position: absolute;
+  right: 12px;
+  bottom: 18px;
+  z-index: 12;
+  max-width: calc(100% - 88px);
+  overflow: hidden;
+  color: rgba(243, 241, 232, 0.72);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .final-intro-modal {

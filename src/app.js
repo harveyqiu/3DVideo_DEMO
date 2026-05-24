@@ -1,9 +1,13 @@
 const canvas = document.querySelector("#stage");
 const ctx = canvas.getContext("2d", { alpha: false });
+const urlParams = new URLSearchParams(window.location.search);
 const appMode = document.body.dataset.mode || "editor";
 const isEditor = appMode === "editor";
 const isViewer = appMode === "viewer";
 const isFinal = appMode === "final";
+const isIntroDemo = appMode === "intro-demo";
+const isIntroEmbed = (isFinal && urlParams.get("intro") === "1") || isIntroDemo;
+const introEmbedProjectionScale = 0.62;
 
 const ui = {
   fileInput: document.querySelector("#fileInput"),
@@ -114,13 +118,13 @@ const state = {
   layoutSaveTimer: null,
   lastLayoutSaveSignature: "",
   pendingLayoutSaveSignature: "",
-  currentSceneId: new URLSearchParams(window.location.search).get("scene") || "default",
+  currentSceneId: urlParams.get("scene") || "default",
   currentSceneName: "默认场景",
   sceneGroups: [],
   finalGroupPreviewCache: new Map(),
   finalGroupRailTimer: null,
-  activeSceneGroupId: new URLSearchParams(window.location.search).get("group") || "default-group",
-  finalSceneGroupId: new URLSearchParams(window.location.search).get("group") || "default-group",
+  activeSceneGroupId: urlParams.get("group") || "default-group",
+  finalSceneGroupId: urlParams.get("group") || "default-group",
   finalStartSceneId: "default",
   scenes: [],
   loadingScene: true,
@@ -144,7 +148,7 @@ const state = {
   gifPlayers: new Map(),
   gifPauseFrames: new Map(),
   scenePlaybackToken: 0,
-  paused: isFinal,
+  paused: isFinal || isIntroDemo,
   transitionToken: 0,
   voice: {
     recognition: null,
@@ -210,6 +214,18 @@ const controls = ["xRange", "yRange", "zRange", "scaleRange", "rotationRange", "
 init();
 
 async function init() {
+  if (isIntroEmbed) {
+    document.body.classList.add("intro-embed-final");
+    ui.finalIntroModal?.setAttribute("hidden", "");
+    if (!isMobileMotionDevice()) {
+      showIntroEmbedUnsupported();
+      bindEvents();
+      resize();
+      requestAnimationFrame(draw);
+      return;
+    }
+    setupIntroEmbedMotionTracking();
+  }
   bindEvents();
   resize();
   await loadInitialScene();
@@ -509,6 +525,43 @@ function on(target, type, handler, options) {
   target?.addEventListener(type, handler, options);
 }
 
+function isMobileMotionDevice() {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches;
+}
+
+function showIntroEmbedUnsupported() {
+  const message = document.createElement("div");
+  message.className = "intro-embed-unsupported";
+  message.textContent = "该功能暂不支持PC端，请从移动端体验";
+  canvas.parentElement?.append(message);
+}
+
+function setupIntroEmbedMotionTracking() {
+  const updateFromOrientation = (event) => {
+    const gamma = clamp(Number(event.gamma || 0) / 28, -1, 1);
+    const beta = clamp((Number(event.beta || 0) - 45) / 36, -1, 1);
+    const alpha = Number(event.alpha || 0);
+    state.pointerHead.x = gamma;
+    state.pointerHead.y = clamp(-beta, -1, 1);
+    state.pointerHead.z = Number.isFinite(alpha) ? Math.sin((alpha * Math.PI) / 180) * 0.35 : 0;
+  };
+
+  const enable = async () => {
+    try {
+      const orientationEvent = globalThis.DeviceOrientationEvent;
+      if (typeof orientationEvent?.requestPermission === "function") {
+        const permission = await orientationEvent.requestPermission();
+        if (permission !== "granted") return;
+      }
+      window.addEventListener("deviceorientation", updateFromOrientation, true);
+    } catch {}
+  };
+
+  enable();
+  on(ui.playPauseButton, "click", enable, { once: true });
+  on(window, "pointerdown", enable, { once: true });
+}
+
 function resize() {
   const rect = canvas.getBoundingClientRect();
   const nextDpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -526,6 +579,7 @@ function resize() {
 }
 
 async function addFiles(files) {
+  if (!isEditor) return;
   const valid = files.filter(isSupportedMediaFile);
   let nextIndex = state.items.length;
 
@@ -614,7 +668,7 @@ function hydrateVideoItem(asset, item) {
   video.muted = true;
   video.loop = shouldLoopVideoAsset(asset);
   video.playsInline = true;
-  video.autoplay = true;
+  video.autoplay = false;
   video.preload = "auto";
   let hasRenderableFrame = false;
 
@@ -888,8 +942,11 @@ async function loadInitialScene() {
   try {
     await loadSceneList();
     await loadAppSettings();
-    if (isFinal && !new URLSearchParams(window.location.search).has("scene")) {
-      state.currentSceneId = getFinalSceneGroup().finalStartSceneId || state.finalStartSceneId || state.currentSceneId;
+    if (isFinal) {
+      resetFinalPlaybackState();
+      state.currentSceneId = getFinalSceneGroup().finalStartSceneId || state.finalStartSceneId || "default";
+    } else if (isIntroDemo) {
+      state.currentSceneId = getActiveSceneGroup().finalStartSceneId || state.finalStartSceneId || "default";
     }
     syncSceneControls();
     const loaded = await loadSceneById(state.currentSceneId);
@@ -962,7 +1019,7 @@ async function applySceneLayout(layout, sceneId, preloadedAssets = new Map()) {
   syncSceneFlowControls();
   state.lastLayoutSaveSignature = getLayoutSaveSignature();
   state.pendingLayoutSaveSignature = "";
-  restartScenePlayback({ autoplay: isViewer || isFinal });
+  restartScenePlayback({ autoplay: (isViewer || isFinal) && !isIntroEmbed });
   updateRangeDisplays();
   setLayoutStatus(hasItems ? `已切换：${state.currentSceneName}` : `空场景：${state.currentSceneName}`, hasItems ? "good" : "warn");
   state.loadingScene = false;
@@ -993,12 +1050,17 @@ async function loadAppSettings() {
     const payload = await response.json();
     const settings = normalizeAppSettings(payload.settings);
     state.sceneGroups = settings.sceneGroups;
-    state.activeSceneGroupId = settings.activeSceneGroupId;
-    state.finalSceneGroupId = settings.finalSceneGroupId;
-    const requestedGroup = new URLSearchParams(window.location.search).get("group");
-    if (requestedGroup && hasSceneGroup(requestedGroup)) {
-      if (isFinal) state.finalSceneGroupId = requestedGroup;
-      else state.activeSceneGroupId = requestedGroup;
+    const requestedGroup = urlParams.get("group");
+    if (isIntroDemo) {
+      state.activeSceneGroupId = hasSceneGroup(requestedGroup) ? requestedGroup : settings.activeSceneGroupId;
+      state.finalSceneGroupId = state.activeSceneGroupId;
+    } else {
+      state.activeSceneGroupId = settings.activeSceneGroupId;
+      state.finalSceneGroupId = settings.finalSceneGroupId;
+      if (requestedGroup && hasSceneGroup(requestedGroup)) {
+        if (isFinal) state.finalSceneGroupId = requestedGroup;
+        else state.activeSceneGroupId = requestedGroup;
+      }
     }
     state.finalStartSceneId = isFinal ? getFinalSceneGroup().finalStartSceneId : getActiveSceneGroup().finalStartSceneId;
     renderSceneGroupOptions();
@@ -1631,7 +1693,7 @@ function isScenePlaybackFinished() {
 }
 
 async function handleSceneMediaEnded() {
-  if (!(isViewer || isFinal) || state.sceneEnded || !isScenePlaybackFinished()) return;
+  if (!(isViewer || isFinal || isIntroDemo) || state.sceneEnded || !isScenePlaybackFinished()) return;
   state.sceneEnded = true;
   if (state.sceneFlow.mode === "auto" && state.sceneFlow.nextSceneId) {
     setLayoutStatus(`场景结束，正在进入：${getSceneLabel(state.sceneFlow.nextSceneId)}`);
@@ -1679,7 +1741,7 @@ async function triggerSceneFlowKeywordSwitch(text) {
 async function switchScene(sceneId) {
   if (!sceneId) return;
   if (sceneId === state.currentSceneId) {
-    if (isViewer || isFinal) restartScenePlayback({ autoplay: true });
+    if (isViewer || isFinal || isIntroDemo) restartScenePlayback({ autoplay: !state.paused });
     return;
   }
   if (isFinal) {
@@ -1688,7 +1750,7 @@ async function switchScene(sceneId) {
   }
   setLayoutStatus("正在切换场景");
   const loaded = await loadSceneById(sceneId);
-  if (loaded || isViewer) updateSceneUrl();
+  if (loaded || isViewer || isIntroDemo) updateSceneUrl();
 }
 
 async function switchSceneGroup(groupId) {
@@ -1710,7 +1772,6 @@ async function switchFinalSceneGroup(groupId) {
   state.finalStartSceneId = getFinalSceneGroup().finalStartSceneId || "default";
   renderSceneGroupOptions();
   renderSceneGroupStructure();
-  await saveAppSettings();
   updateSceneUrl();
   await switchScene(state.finalStartSceneId);
 }
@@ -1827,7 +1888,7 @@ async function deleteSceneLayout(sceneId) {
 function updateSceneUrl() {
   const url = new URL(window.location.href);
   url.searchParams.set("scene", state.currentSceneId);
-  const groupId = isFinal ? state.finalSceneGroupId : state.activeSceneGroupId;
+  const groupId = isFinal && !isIntroDemo ? state.finalSceneGroupId : state.activeSceneGroupId;
   if (groupId) url.searchParams.set("group", groupId);
   window.history.replaceState({}, "", url);
 }
@@ -2705,11 +2766,13 @@ function resumeGifElement(element) {
 }
 
 function togglePlayback() {
+  const wasPaused = state.paused;
   state.paused = !state.paused;
   ui.playPauseButton?.classList.toggle("paused", state.paused);
   ui.playPauseButton?.classList.toggle("playing", !state.paused);
   ui.playPauseButton?.setAttribute("aria-label", state.paused ? "播放画面" : "暂停画面");
   if (!state.paused) {
+    if (isIntroEmbed && wasPaused) restartScenePlayback({ autoplay: true });
     state.gifPauseFrames.forEach((frame) => frame.remove());
     state.gifPauseFrames.clear();
     state.gifElements.forEach((element) => resumeGifElement(element));
@@ -2761,6 +2824,15 @@ function showFinalGroupRail() {
   ui.finalGroupRail.classList.remove("is-collapsed");
 }
 
+function resetFinalPlaybackState() {
+  if (!isFinal) return;
+  state.paused = true;
+  ui.playPauseButton?.classList.add("paused");
+  ui.playPauseButton?.classList.remove("playing");
+  ui.playPauseButton?.setAttribute("aria-label", "鎾斁鐢婚潰");
+  showFinalGroupRail();
+}
+
 function scheduleFinalGroupRailHide(delay = 1000) {
   if (!ui.finalGroupRail || !isFinal) return;
   clearTimeout(state.finalGroupRailTimer);
@@ -2790,7 +2862,7 @@ function project(item) {
   const cameraY = head.y * state.parallax * 1.05;
   const cameraZ = head.z * 120;
   const depth = state.focal + item.z - cameraZ;
-  const scale = clamp(state.focal / Math.max(220, depth), 0.28, 2.2);
+  const scale = clamp(state.focal / Math.max(220, depth), 0.28, 2.2) * (isIntroEmbed ? introEmbedProjectionScale : 1);
   const vanish = getVanishingPoint();
   return {
     x: vanish.x + (item.x - cameraX) * scale,

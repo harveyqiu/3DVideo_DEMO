@@ -20,7 +20,6 @@
         <div class="intro-hero-shade" aria-hidden="true"></div>
         <nav class="intro-nav" aria-label="项目入口">
           <a href="./intro.html" aria-current="page">项目总览</a>
-          <a href="./index.html">编辑器</a>
           <a href="./final.html">最终展示</a>
         </nav>
         <section class="intro-hero-copy">
@@ -57,14 +56,22 @@
             </div>
             <a href="./final.html">打开 final.html</a>
           </article>
-          <article class="intro-entry">
-            <div>
-              <span class="intro-label">Editor</span>
-              <h2>场景编辑器</h2>
-              <p>导入 PNG/GIF/WebM/MOV，调整位置、深度、循环、音频和场景跳转关系。</p>
+          <div class="intro-demo-panel">
+            <div class="intro-section-head">
+              <span class="intro-label">Scene Group</span>
+              <h2>《主角》场景组演示</h2>
             </div>
-            <a href="./index.html">打开编辑器</a>
-          </article>
+            <iframe
+              class="intro-demo-frame"
+              title="《主角》场景组演示"
+              src="./intro-demo.html?group=t1-mpjcb34r"
+              allow="accelerometer; gyroscope; autoplay; fullscreen"
+              allowfullscreen
+            ></iframe>
+            <div class="intro-link-row">
+              <a href="./final.html" target="_blank" rel="noreferrer">PC端请点击，以获得完整体验</a>
+            </div>
+          </div>
         </section>
 
         <section class="intro-media" aria-label="演示视频和文档">
@@ -93,7 +100,9 @@
               <a href="./final.html" target="_blank" rel="noreferrer">进入实时演示</a>
             </div>
           </div>
+        </section>
 
+        <section class="intro-doc-row" aria-label="演示文档">
           <div class="intro-doc-panel">
             <div class="intro-section-head">
               <span class="intro-label">Document</span>
