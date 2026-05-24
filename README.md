@@ -36,11 +36,11 @@
 - Canvas 负责透视投影和视差；GIF 使用 DOM/Canvas 覆盖层保持动画播放；WebM/MOV 作为视频图层参与场景播放。
 - 场景配置会保存到 `data/scene-layout-db.json`，上传素材会保存到 `uploads/`。
 - 场景结束后支持三种流转方式：不跳转、自动进入下一场景、等待观众对话并按关键词跳转。
-- `final.html` 会读取全局设置中的 `finalStartSceneId` 作为首场景，适合实际展示。
+- `final.html` 会读取全局设置中的 `finalSceneGroupId`，再使用该场景组自己的首场景开始展示。
 - 摄像头视线追踪、浏览器语音识别和麦克风能力依赖浏览器授权；线上环境需要 HTTPS。
 - Kimi 用于“导演提示/角色回复”，讯飞超拟人 TTS 用于服务端合成语音，API Key 只应放在服务端环境变量中。
 
-当前 `data/scene-layout-db.json` 中已有 36 个场景，`finalStartSceneId` 为 `a1-mos899qj`。
+当前 `data/scene-layout-db.json` 会保存多个场景组，每个场景组代表一个最终展示视频。
 
 ## 本地运行
 
@@ -129,7 +129,7 @@ GET  /api/settings
 POST /api/settings
 ```
 
-目前主要保存 `finalStartSceneId`。
+目前主要保存 `sceneGroups`、`activeSceneGroupId` 和 `finalSceneGroupId`。
 
 ### 素材
 
