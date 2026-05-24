@@ -980,6 +980,28 @@ label strong {
   align-items: flex-end;
 }
 
+.final-group-select {
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(10, 13, 12, 0.62);
+  backdrop-filter: blur(18px);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.final-group-select select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--panel-solid);
+  color: var(--text);
+}
+
 .final-input-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -1179,6 +1201,11 @@ label strong {
     right: 12px;
     bottom: 12px;
     gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .final-group-select {
+    width: 100%;
   }
 
   .final-interaction {

@@ -6,8 +6,8 @@
         "id": "default",
         "name": "默认场景",
         "scene": {
-          "focal": 900,
-          "parallax": 74,
+          "focal": 720,
+          "parallax": 130,
           "showGrid": true,
           "audioAsset": {
             "key": "uploads/A1-1.mp3",
@@ -18,13 +18,15 @@
           },
           "audioLoop": false,
           "gifLoop": true,
+          "webmLoop": true,
           "flow": {
             "mode": "auto",
             "nextSceneId": "",
             "routes": []
           },
           "xfyunVoice": "x6_lingfeiyi_pro",
-          "ageRequired": false
+          "ageRequired": false,
+          "realtimeReply": false
         },
         "items": [
           {
@@ -33,12 +35,12 @@
             "assetKey": "uploads/1.gif",
             "assetUrl": "/uploads/1.gif",
             "assetType": "image/gif",
-            "x": 0,
-            "y": 0,
-            "z": 235.9999997138977,
-            "scale": 2.15,
+            "x": 160,
+            "y": -34,
+            "z": -180.125,
+            "scale": 1.119744,
             "rotation": 0,
-            "tilt": 0,
+            "tilt": 0.41887902047863906,
             "alpha": 1
           },
           {
@@ -47,12 +49,12 @@
             "assetKey": "uploads/2.gif",
             "assetUrl": "/uploads/2.gif",
             "assetType": "image/gif",
-            "x": 0,
-            "y": 0,
-            "z": -111.20000000000002,
-            "scale": 1.8,
-            "rotation": -0.012217304763960324,
-            "tilt": 0,
+            "x": -58.951508892330224,
+            "y": 89.74304475965972,
+            "z": 73.33333333333331,
+            "scale": 0.8666666666666666,
+            "rotation": 0.20244305602563878,
+            "tilt": 0.1196976334391943,
             "alpha": 1
           },
           {
@@ -61,12 +63,12 @@
             "assetKey": "uploads/3.gif",
             "assetUrl": "/uploads/3.gif",
             "assetType": "image/gif",
-            "x": -20.80000000000001,
-            "y": 102.40000000000003,
-            "z": -86.39999999999998,
-            "scale": 1.8,
-            "rotation": 0,
-            "tilt": 0,
+            "x": -260.58283099414945,
+            "y": -120.71802152001337,
+            "z": 366.66666666666663,
+            "scale": 0.7733333333333333,
+            "rotation": -0.10377672710857347,
+            "tilt": -0.3504701350941567,
             "alpha": 0.78
           },
           {
@@ -75,17 +77,17 @@
             "assetKey": "uploads/4.gif",
             "assetUrl": "/uploads/4.gif",
             "assetType": "image/gif",
-            "x": 0,
-            "y": 0,
-            "z": 335.19999999999993,
-            "scale": 1.8,
-            "rotation": 0,
-            "tilt": 0,
+            "x": 259.58425050968685,
+            "y": 60.01513399756563,
+            "z": 660,
+            "scale": 0.6799999999999999,
+            "rotation": -0.1492448416694823,
+            "tilt": -0.3199962576765691,
             "alpha": 1
           }
         ]
       },
-      "updatedAt": "2026-05-05T16:49:31.530Z"
+      "updatedAt": "2026-05-21T16:38:28.442Z"
     },
     "场景3-morh6xmk": {
       "name": "场景3",
@@ -189,7 +191,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-07T16:19:04.896Z"
+      "updatedAt": "2026-05-16T08:57:11.174Z"
     },
     "w1-mos8b1bn": {
       "name": "W1",
@@ -301,9 +303,9 @@
             "assetKey": "uploads/1-5.webm",
             "assetUrl": "/uploads/1-5.webm",
             "assetType": "video/webm",
-            "x": 0,
-            "y": 38.400000000000034,
-            "z": 50,
+            "x": -24.27777777777778,
+            "y": 118.62222222222226,
+            "z": 5,
             "scale": 0.966,
             "rotation": 0,
             "tilt": 0,
@@ -325,7 +327,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:20:22.481Z"
+      "updatedAt": "2026-05-16T09:00:41.322Z"
     },
     "t2-motyjdhn": {
       "name": "T2",
@@ -1818,7 +1820,7 @@
             "assetType": "video/webm",
             "x": 0,
             "y": 121.59999999999997,
-            "z": 240,
+            "z": 195,
             "scale": 1.04,
             "rotation": 0,
             "tilt": 0,
@@ -1854,7 +1856,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:01:34.372Z"
+      "updatedAt": "2026-05-16T09:01:52.301Z"
     },
     "s1-h-mouawgon": {
       "name": "S1-H",
@@ -2182,7 +2184,7 @@
             "assetType": "video/webm",
             "x": 10.399999999999977,
             "y": 70.39999999999998,
-            "z": -12,
+            "z": 123,
             "scale": 1.04,
             "rotation": 0,
             "tilt": 0,
@@ -2204,7 +2206,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:00:47.232Z"
+      "updatedAt": "2026-05-16T09:01:59.517Z"
     },
     "h1-h-moub0au1": {
       "name": "H1-H",
@@ -2252,7 +2254,7 @@
             "assetType": "video/webm",
             "x": 0,
             "y": 38.400000000000034,
-            "z": 0.39999999999997726,
+            "z": -260,
             "scale": 0.67,
             "rotation": 0,
             "tilt": 0,
@@ -2274,7 +2276,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-06T17:01:18.986Z"
+      "updatedAt": "2026-05-16T09:01:55.590Z"
     },
     "w3-moub233i": {
       "name": "W3",
@@ -2517,6 +2519,6 @@
     }
   },
   "settings": {
-    "finalStartSceneId": "a1-mos899qj"
+    "finalStartSceneId": "default"
   }
 }
