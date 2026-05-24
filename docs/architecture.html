@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>3DVideo_DEMO — 内部架构文档</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #161b22;
+    --bg3: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --text3: #6e7681;
+    --accent: #58a6ff;
+    --accent2: #3fb950;
+    --warn: #d29922;
+    --danger: #f85149;
+    --purple: #bc8cff;
+    --teal: #39d353;
+    --tag-bg: #1f3a5f;
+    --tag-text: #79c0ff;
+    font-size: 14px;
+    color-scheme: dark;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.6;
+    padding: 0;
+  }
+
+  /* Layout */
+  .page { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 240px;
+    min-width: 240px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .sidebar-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    padding: 0 20px 8px;
+  }
+  .sidebar a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 13px;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .sidebar a:hover, .sidebar a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: rgba(88,166,255,0.05);
+  }
+  .sidebar-group { margin-bottom: 20px; }
+  .main { flex: 1; min-width: 0; padding: 40px 48px; max-width: 1100px; }
+
+  /* Typography */
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  h2 { font-size: 20px; font-weight: 600; color: var(--text); margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 16px; font-weight: 600; color: var(--text); margin: 28px 0 10px; }
+  h4 { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .06em; margin: 20px 0 8px; }
+  p { color: var(--text2); margin-bottom: 12px; }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 12px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: #e3b341;
+  }
+  pre {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    overflow-x: auto;
+    margin: 12px 0 20px;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  pre code { background: none; border: none; padding: 0; color: #e3b341; }
+  ul, ol { color: var(--text2); padding-left: 22px; margin-bottom: 12px; }
+  li { margin-bottom: 5px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  strong { color: var(--text); font-weight: 600; }
+
+  /* Components */
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    vertical-align: middle;
+  }
+  .badge-blue { background: #1f3a5f; color: #79c0ff; }
+  .badge-green { background: #1b3a2c; color: #56d364; }
+  .badge-yellow { background: #3d2e00; color: #e3b341; }
+  .badge-red { background: #3d0c0c; color: #f85149; }
+  .badge-purple { background: #2d1f5e; color: #bc8cff; }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  .card-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+
+  .grid { display: grid; gap: 16px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  /* File reference */
+  .file-ref {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 11px;
+    color: var(--purple);
+    opacity: .85;
+  }
+  .line-ref {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  /* Improvement table */
+  .improve-table { width: 100%; border-collapse: collapse; margin: 12px 0 28px; font-size: 13px; }
+  .improve-table th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    background: var(--bg3);
+  }
+  .improve-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    color: var(--text2);
+  }
+  .improve-table tr:last-child td { border-bottom: none; }
+  .improve-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .impact-high { color: var(--danger); font-weight: 600; }
+  .impact-med { color: var(--warn); font-weight: 600; }
+  .impact-low { color: var(--accent2); font-weight: 600; }
+
+  /* Architecture diagram */
+  .arch-diagram {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px 32px;
+    margin: 20px 0;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 2.1;
+    color: var(--text2);
+    overflow-x: auto;
+  }
+  .arch-diagram .hl { color: var(--accent); }
+  .arch-diagram .hl2 { color: var(--accent2); }
+  .arch-diagram .hl3 { color: var(--purple); }
+  .arch-diagram .warn { color: var(--warn); }
+
+  /* Flow diagram */
+  .flow-box {
+    display: inline-block;
+    background: var(--bg3);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    margin: 3px;
+    color: var(--accent);
+    font-family: "SFMono-Regular", monospace;
+  }
+  .flow-box.green { border-color: var(--accent2); color: var(--accent2); }
+  .flow-box.purple { border-color: var(--purple); color: var(--purple); }
+  .flow-box.yellow { border-color: var(--warn); color: var(--warn); }
+  .flow-arrow { color: var(--text3); font-size: 14px; vertical-align: middle; }
+
+  /* Meta header */
+  .meta-header {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin-bottom: 32px;
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .meta-item { font-size: 12px; }
+  .meta-label { color: var(--text3); margin-bottom: 2px; }
+  .meta-value { color: var(--text); font-weight: 600; }
+
+  /* Section anchor */
+  h2[id], h3[id] { scroll-margin-top: 24px; }
+
+  /* Alert box */
+  .alert {
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: 13px;
+    border-left: 3px solid;
+  }
+  .alert-warn { background: rgba(210,153,34,0.08); border-color: var(--warn); color: #e3b341; }
+  .alert-info { background: rgba(88,166,255,0.06); border-color: var(--accent); color: var(--accent); }
+  .alert-danger { background: rgba(248,81,73,0.07); border-color: var(--danger); color: var(--danger); }
+
+  /* Top banner */
+  .top-banner {
+    background: linear-gradient(90deg, #1c1f3a 0%, #13201a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 48px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .project-logo {
+    font-size: 20px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #58a6ff, #3fb950);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .internal-badge {
+    background: rgba(248,81,73,0.15);
+    color: #f85149;
+    border: 1px solid rgba(248,81,73,0.3);
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    padding: 3px 8px;
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main { padding: 24px 20px; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .top-banner { padding: 12px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top banner -->
+<div class="top-banner">
+  <span class="project-logo">3DVideo_DEMO</span>
+  <span class="internal-badge">内部文档</span>
+  <span style="color:var(--text3);font-size:12px;margin-left:auto">生成时间：2026-05-23 &nbsp;·&nbsp; 不对外公开</span>
+</div>
+
+<div class="page">
+  <!-- Sidebar nav -->
+  <nav class="sidebar" aria-label="文档导航">
+    <div class="sidebar-group">
+      <div class="sidebar-title">概览</div>
+      <a href="#overview">项目简介</a>
+      <a href="#tech-stack">技术栈</a>
+      <a href="#file-map">文件地图</a>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-title">架构</div>
+      <a href="#backend">后端 (server.js)</a>
+      <a href="#frontend">前端 (app.js)</a>
+      <a href="#state">状态管理</a>
+      <a href="#rendering">渲染管线</a>
+      <a href="#data-flow">数据流</a>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-title">核心系统</div>
+      <a href="#scene-system">场景系统</a>
+      <a href="#tracking">头部追踪</a>
+      <a href="#voice-pipeline">语音管线</a>
+      <a href="#media">媒体处理</a>
+      <a href="#database">数据库</a>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-title">优化建议</div>
+      <a href="#perf-backend">后端优化</a>
+      <a href="#perf-frontend">前端优化</a>
+      <a href="#perf-arch">架构优化</a>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <!-- Meta header -->
+    <div class="meta-header">
+      <div class="meta-item"><div class="meta-label">运行时</div><div class="meta-value">Node.js (纯原生) + 浏览器</div></div>
+      <div class="meta-item"><div class="meta-label">框架</div><div class="meta-value">无框架依赖</div></div>
+      <div class="meta-item"><div class="meta-label">默认端口</div><div class="meta-value">5174 (localhost only)</div></div>
+      <div class="meta-item"><div class="meta-label">代码规模</div><div class="meta-value">~2700 行后端 + ~4000 行前端</div></div>
+      <div class="meta-item"><div class="meta-label">外部依赖</div><div class="meta-value">Moonshot (Kimi) AI · 讯飞 TTS · MediaPipe</div></div>
+    </div>
+
+    <!-- ===== 1. OVERVIEW ===== -->
+    <h1 id="overview">项目架构文档</h1>
+    <p><strong>3DVideo_DEMO</strong> 是一个具备 3D 视差渲染、头部追踪、AI 对话与 TTS 语音合成的互动视频展示系统。系统分为三个前端模式：编辑器 (<code>index.html</code>)、查看器 (<code>viewer.html</code>) 与最终产品 (<code>final.html</code>)，共享同一个前端入口 <code>src/app.js</code>，由 <code>server.js</code> 提供 HTTP 服务。</p>
+
+    <h2 id="tech-stack">技术栈</h2>
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="card-title">后端</div>
+        <ul>
+          <li>Node.js 原生 <code>http</code> 模块</li>
+          <li>原生 <code>fs</code>、<code>zlib</code>、<code>crypto</code></li>
+          <li>内置 WebSocket 客户端（讯飞 TTS）</li>
+          <li>无任何 npm 依赖</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">前端</div>
+        <ul>
+          <li>原生 Canvas 2D（透视投影）</li>
+          <li>Web Speech API（ASR）</li>
+          <li>MediaPipe FaceLandmarker（头部追踪）</li>
+          <li>浏览器 ImageDecoder API（GIF 帧控制）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">外部服务</div>
+        <ul>
+          <li>Moonshot / Kimi AI（对话生成）</li>
+          <li>讯飞超拟人 TTS（语音合成）</li>
+          <li>PM2（进程管理，<code>ecosystem.config.js</code>）</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== 2. FILE MAP ===== -->
+    <h2 id="file-map">文件地图</h2>
+    <div class="arch-diagram">
+<span class="hl">3DVideo_DEMO/</span>
+├── <span class="hl">server.js</span>            <span class="warn"># 主后端 (~1050 行) — HTTP 服务 + API + 静态文件</span>
+├── <span class="hl">src/app.js</span>          <span class="warn"># 主前端 (~4000 行) — 全部模式共享</span>
+├── <span class="hl2">index.html</span>           <span class="warn"># 编辑器页面 (mode="editor")</span>
+├── <span class="hl2">viewer.html</span>          <span class="warn"># 只读查看页面 (mode="viewer")</span>
+├── <span class="hl2">final.html</span>           <span class="warn"># 最终产品页面 (mode="final")</span>
+├── styles.css           <span class="warn"># 共享样式 (~700 行)</span>
+├── package.json         <span class="warn"># 无外部依赖，仅 scripts</span>
+├── ecosystem.config.js  <span class="warn"># PM2 配置</span>
+├── .env.example         <span class="warn"># 环境变量模板</span>
+├── <span class="hl3">data/</span>
+│   └── scene-layout-db.json   <span class="warn"># 场景数据库（扁平 JSON）</span>
+├── <span class="hl3">uploads/</span>             <span class="warn"># 用户上传文件</span>
+├── <span class="hl3">mat/</span>                 <span class="warn"># 内置素材（GIF/视频）</span>
+└── <span class="hl3">public/uploads/</span>      <span class="warn"># 公开静态媒体资源</span>
+    </div>
+
+    <!-- ===== 3. BACKEND ===== -->
+    <h2 id="backend">后端架构 (server.js)</h2>
+    <p>单文件纯 Node.js HTTP 服务器，监听 <code>127.0.0.1:5174</code>，无任何框架。路由用 if-chain 分发，所有处理器均为 <code>async</code> 函数。</p>
+
+    <h3>API 端点总览</h3>
+    <table class="improve-table">
+      <thead>
+        <tr><th>路径</th><th>方法</th><th>用途</th><th>文件位置</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/api/layout</code></td><td>GET / POST</td><td>列出/读取/保存场景布局</td><td><span class="file-ref">server.js</span> <span class="line-ref">L129</span></td></tr>
+        <tr><td><code>/api/settings</code></td><td>GET / POST</td><td>读取/保存应用全局设置</td><td><span class="file-ref">server.js</span> <span class="line-ref">L153</span></td></tr>
+        <tr><td><code>/api/assets</code></td><td>GET / POST</td><td>列出素材 / 上传新文件</td><td><span class="file-ref">server.js</span> <span class="line-ref">L171</span></td></tr>
+        <tr><td><code>/api/director-cue</code></td><td>POST</td><td>Kimi AI 对话代理</td><td><span class="file-ref">server.js</span> <span class="line-ref">L198</span></td></tr>
+        <tr><td><code>/api/tts</code></td><td>POST</td><td>讯飞 TTS（完整响应）</td><td><span class="file-ref">server.js</span> <span class="line-ref">L301</span></td></tr>
+        <tr><td><code>/api/tts-stream</code></td><td>POST</td><td>讯飞 TTS（流式分块）</td><td><span class="file-ref">server.js</span> <span class="line-ref">L341</span></td></tr>
+        <tr><td><code>/*</code></td><td>GET / HEAD</td><td>静态文件服务（含 Range / Gzip）</td><td><span class="file-ref">server.js</span> <span class="line-ref">L532</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3>数据库读写模式</h3>
+    <p>数据库为单个 JSON 文件 <code>data/scene-layout-db.json</code>，每次读写均通过 <code>readDatabase()</code> 从磁盘加载全量内容，写入时序列化整个对象。</p>
+    <pre><code>// server.js L738-748
+async function readDatabase() {
+  await ensureDatabase();
+  const raw = await fs.promises.readFile(dbPath, "utf8");  // 每次请求都读磁盘
+  const db = JSON.parse(raw);
+  return await normalizeDatabase(db);   // 每次都执行完整 normalizeDatabase
+}</code></pre>
+
+    <h3>TTS 流水线（讯飞 WebSocket）</h3>
+    <p>服务器通过 WebSocket 连接讯飞 API，接收乱序音频帧后用 <code>pending Map</code> 按 <code>seq</code> 排序后顺序发送给客户端。</p>
+    <div class="card" style="margin-top:12px">
+      <span class="flow-box">客户端 POST /api/tts</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box green">server.js: synthesizeXfyunTtsToStream</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box purple">WebSocket → 讯飞 API</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box yellow">pending Map 排序</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box green">Chunked audio/mpeg → 客户端</span>
+    </div>
+
+    <!-- ===== 4. FRONTEND ===== -->
+    <h2 id="frontend">前端架构 (src/app.js)</h2>
+    <p><code>src/app.js</code> 由三个 HTML 文件共同引用，通过 <code>document.body.dataset.mode</code> (<code>"editor"</code> / <code>"viewer"</code> / <code>"final"</code>) 区分运行模式，模式特有功能通过 <code>isViewer</code> / <code>isFinal</code> 标志门控。</p>
+
+    <h3>初始化流程</h3>
+    <pre><code>// src/app.js L189-204
+async function init() {
+  bindEvents();          // 绑定所有 DOM 事件
+  resize();             // 初始化 canvas 尺寸
+  await loadInitialScene();  // 加载场景数据
+  syncControls();        // 同步 UI 控件状态
+  requestAnimationFrame(draw);  // 启动渲染循环
+}</code></pre>
+
+    <!-- ===== 5. STATE ===== -->
+    <h2 id="state">状态管理</h2>
+    <p>全局单例 <code>state</code> 对象包含所有运行时状态，无框架或响应式层，变更直接修改属性后手动调用相关更新函数。</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-title">画布与相机状态</div>
+        <ul>
+          <li><code>width, height, dpr</code> — 画布物理尺寸</li>
+          <li><code>focal</code> — 透视焦距 (520–1300)</li>
+          <li><code>parallax</code> — 视差强度 (0–180)</li>
+          <li><code>pointerHead / trackedHead / currentHead</code> — 三路头部位置</li>
+          <li><code>cameraOn, tracker</code> — 追踪状态</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">场景与媒体状态</div>
+        <ul>
+          <li><code>items[]</code> — 当前场景图层数组</li>
+          <li><code>currentSceneId, scenes[]</code> — 场景列表</li>
+          <li><code>sceneFlow</code> — 场景流转配置</li>
+          <li><code>gifElements, gifPlayers, gifPauseFrames</code> — GIF 管理 Map</li>
+          <li><code>paused, scenePlaybackToken</code> — 播放控制</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">语音状态 (voice)</div>
+        <ul>
+          <li><code>recognition</code> — SpeechRecognition 实例</li>
+          <li><code>listening, busy</code> — 识别状态机</li>
+          <li><code>conversation[]</code> — Kimi 对话历史</li>
+          <li><code>transcriptBuffer, interimTranscript</code> — ASR 输出缓冲</li>
+          <li><code>micStream, micAudioContext, micAnalyser</code> — 麦克风监控</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">用户变量与 AI 状态</div>
+        <ul>
+          <li><code>userVariables{}</code> — 运行时变量（如 <code>user_age</code>）</li>
+          <li><code>ageRequired, pendingAgeFlow</code> — 年龄提取流程</li>
+          <li><code>activeTts</code> — 当前播放的 TTS 音频元素</li>
+          <li><code>realtimeReply</code> — 实时回复模式标志</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== 6. RENDERING ===== -->
+    <h2 id="rendering">渲染管线</h2>
+    <p>以 <code>requestAnimationFrame</code> 驱动的 60fps Canvas 2D 渲染循环，实现透视投影 + 视差效果。</p>
+
+    <h3>每帧执行顺序</h3>
+    <div class="arch-diagram">
+<span class="hl">draw()</span>  [60fps rAF loop]
+  ├─ <span class="hl2">updateHead()</span>        — EMA 平滑头部位置 (系数 0.12)
+  ├─ <span class="hl2">drawBackdrop()</span>      — 渐变背景填充
+  ├─ <span class="hl2">drawPerspectiveGrid()</span>— 透视网格 (可选)
+  ├─ <span class="hl2">drawItems()</span>         — <span class="warn">每帧按 z 深度排序</span> → 逐层绘制
+  │   └─ drawItem(item)   — 透视投影 + 变换 + 绘制
+  ├─ <span class="hl2">updateGifOverlays()</span> — 同步 DOM GIF/canvas 位置与可见性
+  └─ <span class="hl2">drawReticle()</span>       — 中心准星
+    </div>
+
+    <h3>透视投影数学</h3>
+    <pre><code>// project(item) 核心公式
+const cameraX = head.x * parallax * 1.9;
+const depth    = focal + item.z - cameraZ;
+const scale    = clamp(focal / Math.max(220, depth), 0.28, 2.2);
+const screenX  = cx + (item.x - cameraX) * scale;
+
+// 偏转/倾斜视差
+const yaw      = item.tilt + head.x * 0.18 - item.x * 0.00018;
+const squash   = Math.cos(yaw);      // X 轴压缩
+const skew     = Math.sin(yaw) * 0.16; // 剪切扭曲</code></pre>
+
+    <!-- ===== 7. DATA FLOW ===== -->
+    <h2 id="data-flow">数据流</h2>
+    <h3>编辑保存流</h3>
+    <div class="card" style="padding:16px 20px">
+      <span class="flow-box">用户操作 (拖拽/滑块)</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box yellow">scheduleSaveLayout() (1s 防抖)</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box">POST /api/layout</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box green">写入 scene-layout-db.json</span>
+    </div>
+    <h3>语音交互流</h3>
+    <div class="card" style="padding:16px 20px">
+      <span class="flow-box">Web Speech API → 中文 ASR</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box">POST /api/director-cue</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box purple">Kimi AI (Moonshot)</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box">POST /api/tts</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box purple">讯飞 WebSocket TTS</span>
+      <span class="flow-arrow"> → </span>
+      <span class="flow-box green">audio/mpeg → 播放 + 字幕</span>
+    </div>
+
+    <!-- ===== 8. SCENE SYSTEM ===== -->
+    <h2 id="scene-system">场景系统</h2>
+    <p>场景保存在 JSON 数据库中，每个场景包含图层数组和场景级配置，支持三种流转模式。</p>
+    <h3>场景数据结构</h3>
+    <pre><code>{
+  id: "scene-id",
+  name: "场景名称",
+  scene: {
+    focal, parallax, showGrid,
+    audioAsset, audioLoop, gifLoop, webmLoop,
+    flow: {
+      mode: "none" | "auto" | "dialog",  // 流转模式
+      nextSceneId: "target-id",
+      routes: [{ keywords: "关键词", sceneId: "target" }]
+    },
+    xfyunVoice, ageRequired, realtimeReply
+  },
+  items: [{ id, name, assetKey, assetUrl, assetType, x, y, z, scale, rotation, tilt, alpha }]
+}</code></pre>
+
+    <h3>场景流转模式</h3>
+    <table class="improve-table">
+      <thead><tr><th>模式</th><th>触发时机</th><th>逻辑</th></tr></thead>
+      <tbody>
+        <tr><td><code>"none"</code></td><td>无自动跳转</td><td>仅编辑器手动切换</td></tr>
+        <tr><td><code>"auto"</code></td><td>音频/GIF 结束</td><td>自动跳入 <code>nextSceneId</code></td></tr>
+        <tr><td><code>"dialog"</code></td><td>用户语音输入后</td><td>关键词匹配 <code>routes[]</code> 决定目标场景</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ===== 9. TRACKING ===== -->
+    <h2 id="tracking">头部追踪</h2>
+    <p>支持三种追踪器，按能力依次降级：</p>
+    <div class="arch-diagram">
+1. <span class="hl">MediaPipe FaceLandmarker</span>  (468 关键点，精度最高)
+   └─ 提取眼角坐标 (landmark 33/133, 362/263) → 计算头部 x/y/z
+
+2. <span class="hl2">浏览器 FaceDetector API</span>  (原生，精度中等)
+   └─ 边界框中心 + 宽度 → x/y/z
+
+3. <span class="warn">Noop Tracker</span>             (无摄像头，鼠标指针代替)
+    </div>
+    <p>追踪结果经 EMA 平滑 (<strong>系数 0.12</strong>，每帧约 12% 混合) 写入 <code>state.currentHead</code>。</p>
+
+    <!-- ===== 10. VOICE PIPELINE ===== -->
+    <h2 id="voice-pipeline">语音管线</h2>
+    <h3>ASR（语音识别）</h3>
+    <ul>
+      <li>使用 Web Speech API (<code>SpeechRecognition</code>，<code>lang: zh-CN</code>，连续模式)</li>
+      <li>最短监听时间 <code>minListenMs: 3000ms</code>，避免误触发</li>
+      <li>停止后自动重启，实现类连续识别</li>
+    </ul>
+    <h3>AI 对话（Kimi）</h3>
+    <ul>
+      <li>超时 12s (<code>KIMI_TIMEOUT_MS</code>)，最大 160 token (<code>KIMI_MAX_TOKENS</code>)</li>
+      <li>内置角色 "夏仁"，四幕叙事结构：<code>opening → choice → reveal → ending</code></li>
+      <li>超时时返回空 cue + warning，不影响流程</li>
+    </ul>
+    <h3>TTS（讯飞超拟人）</h3>
+    <ul>
+      <li>4 种声线：lingfeiyi / lingxiaoxuan / lingyuyan / lingbosong</li>
+      <li>WebSocket 协议，15s 超时，按 <code>seq</code> 排序乱序帧</li>
+      <li>支持流式 (<code>/api/tts-stream</code>) 和完整 (<code>/api/tts</code>) 两种模式</li>
+    </ul>
+
+    <!-- ===== 11. MEDIA ===== -->
+    <h2 id="media">媒体处理</h2>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-title">图片 (PNG / GIF)</div>
+        <ul>
+          <li>PNG：直接 <code>drawImage</code> 到 canvas</li>
+          <li>GIF 循环：DOM <code>&lt;img&gt;</code> 浮层覆盖 canvas</li>
+          <li>GIF 不循环：<code>ImageDecoder</code> 逐帧解码，末帧暂停</li>
+          <li>暂停帧缓存在 <code>gifPauseFrames Map</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">视频 (MOV / WebM)</div>
+        <ul>
+          <li>每帧从 <code>&lt;video&gt;</code> 元素抓帧到 canvas</li>
+          <li>支持 HTTP Range 请求（视频 seek）</li>
+          <li>WebM 独立循环控制 (<code>webmLoop</code>)</li>
+          <li>上传大小限制：512 MB</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== 12. DATABASE ===== -->
+    <h2 id="database">数据库</h2>
+    <p>单个 JSON 文件 <span class="file-ref">data/scene-layout-db.json</span>，结构如下：</p>
+    <pre><code>{
+  "settings": { "finalStartSceneId": "scene-id" },
+  "layouts": {
+    "default":  { "name": "默认场景", "payload": {...}, "updatedAt": "ISO8601" },
+    "scene-2":  { "name": "场景2",    "payload": {...}, "updatedAt": "ISO8601" }
+  }
+}</code></pre>
+    <div class="alert alert-warn">每次 <code>readDatabase()</code> 都从磁盘读取全量 JSON 并执行 <code>normalizeDatabase()</code>，当场景数量增多时会造成明显 I/O 和 CPU 开销。</div>
+
+    <!-- ===== 13. PERF: BACKEND ===== -->
+    <h2 id="perf-backend">后端性能优化建议</h2>
+
+    <table class="improve-table">
+      <thead>
+        <tr><th>#</th><th>问题</th><th>位置</th><th>影响</th><th>建议方案</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>B-1</td>
+          <td><strong>数据库无内存缓存</strong>：每次 API 请求均从磁盘读取全量 JSON</td>
+          <td><span class="file-ref">server.js</span> <span class="line-ref">L738</span></td>
+          <td class="impact-high">高</td>
+          <td>引入模块级 <code>let dbCache = null</code>，写入后更新缓存；脏标记驱动持久化。可用 <code>debounce</code> 批量合并写操作。</td>
+        </tr>
+        <tr>
+          <td>B-2</td>
+          <td><strong>normalizeDatabase 每次全量执行</strong>：读取时无论是否变化均完整遍历</td>
+          <td><span class="file-ref">server.js</span> <span class="line-ref">L750</span></td>
+          <td class="impact-med">中</td>
+          <td>B-1 缓存引入后 normalizeDatabase 仅在写入时运行一次，读取直接返回缓存对象。</td>
+        </tr>
+        <tr>
+          <td>B-3</td>
+          <td><strong>Gzip 压缩未缓存</strong>：每次请求静态文件都即时压缩，对大型 JS 文件影响显著</td>
+          <td><span class="file-ref">server.js</span> <span class="line-ref">L597</span></td>
+          <td class="impact-med">中</td>
+          <td>启动时预压缩 HTML/JS/CSS 文件到内存 Map，请求时直接返回。或在文件变更时失效缓存（用 <code>mtime</code> 校验）。</td>
+        </tr>
+        <tr>
+          <td>B-4</td>
+          <td><strong>无 ETag / If-None-Match</strong>：浏览器无法做条件请求，每次都下载完整静态文件</td>
+          <td><span class="file-ref">server.js</span> <span class="line-ref">L532</span></td>
+          <td class="impact-med">中</td>
+          <td>在 <code>serveStaticFile</code> 中用文件 <code>mtime + size</code> 生成弱 ETag，添加 <code>ETag</code> 响应头并处理 <code>If-None-Match</code>，命中时返回 304。</td>
+        </tr>
+        <tr>
+          <td>B-5</td>
+          <td><strong>资产列表每次扫描磁盘</strong>：<code>GET /api/assets</code> 实时遍历 <code>mat/</code> 和 <code>uploads/</code> 目录</td>
+          <td><span class="file-ref">server.js</span> <span class="line-ref">L813</span></td>
+          <td class="impact-low">低</td>
+          <td>维护内存资产列表，在上传操作 (<code>POST /api/assets</code>) 后增量更新，避免 GET 时扫目录。</td>
+        </tr>
+        <tr>
+          <td>B-6</td>
+          <td><strong>JSON 写入非原子操作</strong>：直接 <code>writeFile(dbPath)</code> 可能在崩溃时产生损坏文件</td>
+          <td><span class="file-ref">server.js</span> <span class="line-ref">L704</span></td>
+          <td class="impact-low">低</td>
+          <td>写入临时文件 <code>dbPath + ".tmp"</code>，完成后 <code>fs.rename()</code>（原子替换）。加写互斥锁防并发写冲突。</td>
+        </tr>
+        <tr>
+          <td>B-7</td>
+          <td><strong>scriptBeats 前后端重复定义</strong>：内容相同的对象在服务端和客户端各维护一份</td>
+          <td><span class="file-ref">server.js</span> <span class="line-ref">L55</span> / <span class="file-ref">app.js</span> <span class="line-ref">L147</span></td>
+          <td class="impact-low">低</td>
+          <td>通过 <code>GET /api/script-beats</code> 接口暴露，前端动态拉取。或将共享配置提取到 <code>data/script-beats.json</code>。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>B-1 数据库缓存示例</h3>
+    <pre><code>// server.js — 在 readDatabase / writeLayoutPayload 修改处
+
+let dbCache = null;   // 内存缓存
+let dbWriteTimer = null;
+
+async function readDatabase() {
+  if (dbCache) return dbCache;           // 命中缓存，跳过磁盘读取
+  await ensureDatabase();
+  const raw = await fs.promises.readFile(dbPath, "utf8");
+  dbCache = await normalizeDatabase(JSON.parse(raw));
+  return dbCache;
+}
+
+async function persistDatabase() {
+  if (!dbCache) return;
+  const tmp = dbPath + ".tmp";
+  await fs.promises.writeFile(tmp, JSON.stringify(dbCache, null, 2), "utf8");
+  await fs.promises.rename(tmp, dbPath);  // 原子替换 (B-6)
+}
+
+// 防抖写入：500ms 内多次变更合并为一次磁盘操作
+function schedulePersist() {
+  clearTimeout(dbWriteTimer);
+  dbWriteTimer = setTimeout(persistDatabase, 500);
+}
+
+async function writeLayoutPayload(id, name, payload) {
+  const db = await readDatabase();
+  db.layouts[id] = { name, payload: { ...payload, id, name }, updatedAt: new Date().toISOString() };
+  schedulePersist();  // 替换原来的 fs.promises.writeFile
+}</code></pre>
+
+    <!-- ===== 14. PERF: FRONTEND ===== -->
+    <h2 id="perf-frontend">前端性能优化建议</h2>
+
+    <table class="improve-table">
+      <thead>
+        <tr><th>#</th><th>问题</th><th>位置</th><th>影响</th><th>建议方案</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>F-1</td>
+          <td><strong>rAF 循环在 paused/后台不停歇</strong>：页面不可见或暂停时仍以 60fps 运行</td>
+          <td><span class="file-ref">app.js</span> <span class="line-ref">L194</span></td>
+          <td class="impact-high">高</td>
+          <td>使用 <code>document.addEventListener("visibilitychange")</code> + Page Visibility API：页面隐藏时暂停 rAF，重新可见时恢复。场景暂停且无追踪时也可降帧（<code>setTimeout</code> 8fps 代替 rAF）。</td>
+        </tr>
+        <tr>
+          <td>F-2</td>
+          <td><strong>items 每帧排序</strong>：<code>drawItems()</code> 在每个 rAF 帧对图层数组按 z 深度排序</td>
+          <td><span class="file-ref">app.js</span> <span class="line-ref">drawItems()</span></td>
+          <td class="impact-med">中</td>
+          <td>维护一个预排序的 <code>sortedItems</code> 数组，仅在图层 z 值变化时重新排序（脏标记）。拖拽时图层数量有限，实际 sort 成本低，但可消除 final 模式下无操作时的多余排序。</td>
+        </tr>
+        <tr>
+          <td>F-3</td>
+          <td><strong>resize 无节流</strong>：窗口 resize 事件直接触发 canvas 尺寸重算</td>
+          <td><span class="file-ref">app.js</span> <span class="line-ref">L421</span></td>
+          <td class="impact-low">低</td>
+          <td>用 <code>ResizeObserver</code> 替代 <code>window.resize</code> 事件，或加 16ms debounce。<code>ResizeObserver</code> 更精准且不会在无变化时触发。</td>
+        </tr>
+        <tr>
+          <td>F-4</td>
+          <td><strong>拖拽时重建图层列表 DOM</strong>：<code>pointermove</code> 拖拽触发 <code>renderLayerList()</code>，每次重建全部 DOM 节点</td>
+          <td><span class="file-ref">app.js</span> <span class="line-ref">L369</span></td>
+          <td class="impact-med">中</td>
+          <td>拖拽期间跳过 <code>renderLayerList()</code>，仅更新坐标显示值；<code>pointerup</code> 结束时再做一次完整刷新。</td>
+        </tr>
+        <tr>
+          <td>F-5</td>
+          <td><strong>人脸检测每帧运行</strong>：MediaPipe/FaceDetector 在每个 rAF 帧都调用推理</td>
+          <td><span class="file-ref">app.js</span> tracking loop</td>
+          <td class="impact-med">中</td>
+          <td>将追踪帧率降至 15–20fps（每 3–4 帧推理一次），渲染仍保持 60fps，利用上帧 EMA 值插值。EMA 系数 0.12 的平滑性可掩盖追踪帧率降低带来的抖动。</td>
+        </tr>
+        <tr>
+          <td>F-6</td>
+          <td><strong>GIF 状态管理用三个 Map</strong>：<code>gifElements</code>、<code>gifPlayers</code>、<code>gifPauseFrames</code> 分散管理，同一图层数据分布在三处</td>
+          <td><span class="file-ref">app.js</span> <span class="line-ref">L120-122</span></td>
+          <td class="impact-low">低</td>
+          <td>合并为单一 Map，值为对象 <code>{ element, player, pauseFrame }</code>，降低查找复杂度和维护成本。</td>
+        </tr>
+        <tr>
+          <td>F-7</td>
+          <td><strong>layoutSaveTimer 每次变更完整序列化</strong>：拖拽中 1s 内 scheduleSaveLayout 多次触发都会在到期时完整 POST 场景数据</td>
+          <td><span class="file-ref">app.js</span> <span class="line-ref">L98</span></td>
+          <td class="impact-low">低</td>
+          <td>当前防抖已是 1s，实际影响不大。如需进一步优化，可在拖拽结束 (<code>pointerup</code>) 时才触发保存，拖拽中只更新本地 state。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>F-1 Page Visibility 示例</h3>
+    <pre><code>// src/app.js — 在 init() 后添加
+
+let rafId = null;
+
+function startDrawLoop() {
+  if (rafId) return;
+  function loop() {
+    draw();
+    rafId = requestAnimationFrame(loop);
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+function stopDrawLoop() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopDrawLoop();
+  else startDrawLoop();
+});</code></pre>
+
+    <h3>F-5 追踪帧率节流示例</h3>
+    <pre><code>// 在 tracking runDetection 循环中添加节流
+
+let trackFrameCount = 0;
+const TRACK_EVERY_N_FRAMES = 3;  // 60fps ÷ 3 = 20fps 推理
+
+function trackingLoop() {
+  trackFrameCount++;
+  if (trackFrameCount % TRACK_EVERY_N_FRAMES === 0) {
+    runFaceDetection();  // 仅每 3 帧执行一次推理
+  }
+  requestAnimationFrame(trackingLoop);
+}</code></pre>
+
+    <!-- ===== 15. ARCH IMPROVEMENTS ===== -->
+    <h2 id="perf-arch">架构级优化建议</h2>
+
+    <table class="improve-table">
+      <thead>
+        <tr><th>#</th><th>问题</th><th>影响</th><th>建议方案</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>A-1</td>
+          <td><strong>credentials 硬编码在 ecosystem.config.js</strong>：讯飞/Moonshot 密钥出现在 PM2 配置文件中，易被意外提交</td>
+          <td class="impact-high">高（安全）</td>
+          <td>从 <code>ecosystem.config.js</code> 删除所有 secrets，改从 <code>.env</code> 文件或 OS 环境变量注入。在 <code>.gitignore</code> 中确认 <code>.env</code> 已被忽略。</td>
+        </tr>
+        <tr>
+          <td>A-2</td>
+          <td><strong>单文件 HTTP 服务器缺乏并发保护</strong>：多个请求同时写 DB 时存在竞态，无请求排队</td>
+          <td class="impact-med">中</td>
+          <td>引入写互斥锁（简单 Promise 队列）保护 <code>writeLayoutPayload</code> 和 <code>writeSettings</code>，或结合 B-1 缓存方案中的 <code>schedulePersist</code> 批量写。</td>
+        </tr>
+        <tr>
+          <td>A-3</td>
+          <td><strong>TTS 无请求去重/缓存</strong>：相同文本重复 TTS 请求每次都经过讯飞 WebSocket，浪费 RTT</td>
+          <td class="impact-med">中</td>
+          <td>用 <code>Map&lt;text+voice, Promise&lt;Buffer&gt;&gt;</code> 做进行中请求去重（deduplication），相同文本的并发请求共享同一个 Promise。可选：对频繁使用的短语做内存缓存，TTL 5 分钟。</td>
+        </tr>
+        <tr>
+          <td>A-4</td>
+          <td><strong>前端错误无上报机制</strong>：AI 超时、TTS 失败等错误仅 console 输出，运营无法感知</td>
+          <td class="impact-low">低</td>
+          <td>添加简单的 <code>POST /api/log-error</code> 接口，前端在关键失败路径上调用，服务端写 append-only 日志文件。</td>
+        </tr>
+        <tr>
+          <td>A-5</td>
+          <td><strong>场景切换无预加载</strong>：<code>"auto"</code> / <code>"dialog"</code> 模式切换下一场景时才开始加载媒体，有明显延迟</td>
+          <td class="impact-med">中</td>
+          <td>在当前场景媒体播放中期（如 50% 进度）异步预加载 <code>nextSceneId</code> 的资源到内存，场景切换时直接应用，消除切换延迟。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="alert alert-danger">
+      <strong>A-1 安全优先：</strong>在 <code>ecosystem.config.js</code> 中发现 API keys 硬编码风险。部署到生产环境前必须迁移到环境变量，并确认密钥未被提交到 git 历史。
+    </div>
+
+    <!-- Summary -->
+    <h2 id="summary">优先级汇总</h2>
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="card-title" style="color:var(--danger)">高优先级</div>
+        <ul>
+          <li><strong>A-1</strong> 移除硬编码凭证</li>
+          <li><strong>B-1</strong> DB 内存缓存 + 防抖写入</li>
+          <li><strong>F-1</strong> rAF 后台暂停</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--warn)">中优先级</div>
+        <ul>
+          <li><strong>B-3</strong> 静态文件 Gzip 缓存</li>
+          <li><strong>B-4</strong> ETag 条件请求</li>
+          <li><strong>F-2</strong> items 排序脏标记</li>
+          <li><strong>F-4</strong> 拖拽时跳过 DOM 重建</li>
+          <li><strong>F-5</strong> 追踪帧率节流</li>
+          <li><strong>A-3</strong> TTS 请求去重</li>
+          <li><strong>A-5</strong> 场景预加载</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--accent2)">低优先级</div>
+        <ul>
+          <li><strong>B-5</strong> 资产列表缓存</li>
+          <li><strong>B-6</strong> 原子 DB 写入</li>
+          <li><strong>B-7</strong> scriptBeats 统一来源</li>
+          <li><strong>F-3</strong> resize ResizeObserver</li>
+          <li><strong>F-6</strong> GIF Map 合并</li>
+          <li><strong>A-2</strong> 写入互斥锁</li>
+          <li><strong>A-4</strong> 错误上报</li>
+        </ul>
+      </div>
+    </div>
+
+    <p style="margin-top:40px;color:var(--text3);font-size:12px;border-top:1px solid var(--border);padding-top:20px">
+      本文档为内部技术文档，仅限团队内部使用。最后更新：2026-05-23。
+    </p>
+
+  </main>
+</div>
+
+<script>
+  // Sidebar active link highlighting
+  const sections = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.sidebar a');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const active = document.querySelector(`.sidebar a[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
