@@ -414,6 +414,17 @@ body.intro-page {
   margin-top: 28px;
 }
 
+.intro-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.intro-entry .intro-entry-actions a {
+  margin-top: 0;
+}
+
 .intro-media {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
