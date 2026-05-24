@@ -4,6 +4,13 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 
+// Structured JSON logger — outputs one JSON line per call to stdout/stderr
+function log(level, msg, ctx = {}) {
+  const entry = { ts: new Date().toISOString(), level, msg, ...ctx };
+  const dest = level === "error" || level === "warn" ? process.stderr : process.stdout;
+  dest.write(JSON.stringify(entry) + "\n");
+}
+
 const rootDir = __dirname;
 const port = Number(process.env.PORT || 5174);
 const moonshotApiKey = process.env.MOONSHOT_API_KEY || "";
@@ -27,6 +34,11 @@ const dataDir = path.join(rootDir, "data");
 const uploadsDir = path.join(rootDir, "uploads");
 const dbPath = path.join(dataDir, "scene-layout-db.json");
 const maxUploadBytes = 512 * 1024 * 1024;
+
+// DB cache, write mutex, and debounced persist (B-1, B-6, A-2)
+let dbCache = null;
+let dbWriteChain = Promise.resolve();
+let dbPersistTimer = null;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -67,6 +79,13 @@ const mediaExtensions = new Set([
 ]);
 const compressibleExtensions = new Set([".html", ".js", ".css", ".json", ".txt"]);
 
+// In-memory gzip cache: filePath → { mtime, buffer } (B-3)
+const gzipCache = new Map();
+// In-memory assets list cache (B-5)
+let assetsCache = null;
+// TTS in-flight deduplication: key → Promise<Buffer> (A-3)
+const ttsInFlight = new Map();
+
 function staticCacheControl(ext) {
   return mediaExtensions.has(ext) ? "public, max-age=31536000" : "no-cache";
 }
@@ -90,9 +109,30 @@ const scriptBeats = {
   },
 };
 
-const server = http.createServer(async (request, response) => {
+const server = http.createServer((request, response) => {
+  const startedAt = Date.now();
+  handleRequest(request, response).finally(() => {
+    const reqPath = request.url.split("?")[0];
+    // Skip health check logs to avoid noise from frequent polling
+    if (reqPath !== "/health") {
+      log("info", "http", {
+        method: request.method,
+        path: reqPath,
+        status: response.statusCode,
+        ms: Date.now() - startedAt,
+      });
+    }
+  });
+});
+
+async function handleRequest(request, response) {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
+
+    if (url.pathname === "/health") {
+      await handleHealth(request, response);
+      return;
+    }
 
     if (url.pathname === "/api/director-cue") {
       await handleDirectorCue(request, response);
@@ -101,6 +141,11 @@ const server = http.createServer(async (request, response) => {
 
     if (url.pathname === "/api/tts") {
       await handleTts(request, response);
+      return;
+    }
+
+    if (url.pathname === "/api/tts-stream") {
+      await handleTtsStream(request, response);
       return;
     }
 
@@ -119,6 +164,16 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname === "/api/script-beats") {
+      handleScriptBeats(response);
+      return;
+    }
+
+    if (url.pathname === "/api/log-error") {
+      await handleLogError(request, response);
+      return;
+    }
+
     if (request.method !== "GET" && request.method !== "HEAD") {
       sendJson(response, 405, { error: "method_not_allowed" });
       return;
@@ -127,22 +182,34 @@ const server = http.createServer(async (request, response) => {
     await serveStaticFile(url.pathname, request, response);
   } catch (error) {
     if (response.writableEnded) return;
+    log("error", "unhandled_error", {
+      method: request.method,
+      path: request.url.split("?")[0],
+      error: error.message,
+    });
     const status = error.statusCode || 500;
     sendJson(response, status, {
       error: error.code || (status === 413 ? "payload_too_large" : "server_error"),
       message: error.message,
     });
   }
-});
+}
 
 
 server.listen(port, "127.0.0.1", () => {
   ensureDatabase()
-    .then(() => console.log(`3DVideo_DEMO running at http://127.0.0.1:${port}/`))
+    .then(() => log("info", "server_start", { port, url: `http://127.0.0.1:${port}/` }))
     .catch((error) => {
-      console.error("Failed to initialize database:", error);
+      log("error", "db_init_failed", { error: error.message });
       process.exit(1);
     });
+});
+
+process.on("SIGTERM", () => {
+  log("info", "shutdown", { reason: "SIGTERM" });
+  // Flush pending DB write before exit
+  clearTimeout(dbPersistTimer);
+  withDbWriteLock(persistDatabase).finally(() => process.exit(0));
 });
 
 async function handleLayout(request, response, url) {
@@ -229,6 +296,8 @@ async function handleAssets(request, response, url) {
       return;
     }
     await fs.promises.writeFile(filePath, buffer);
+    assetsCache = null; // invalidate cache after upload (B-5)
+    log("info", "asset_uploaded", { filename: finalName, bytes: buffer.length, ext });
 
     sendJson(response, 200, await assetFromFile(filePath, "uploads"));
     return;
@@ -271,10 +340,12 @@ async function handleDirectorCue(request, response) {
       : null;
   const messages = buildDirectorMessages(text, beatKey, conversation, { scene, variables, age });
 
+  log("info", "moonshot_request", { beat: beatKey, model: kimiModel });
   const { response: upstreamResponse, payload: upstreamPayload, timing } = await requestMoonshot(messages);
   if (!upstreamResponse.ok) {
     const totalMs = Date.now() - requestStartedAt;
     if (upstreamResponse.status === 504) {
+      log("warn", "moonshot_timeout", { beat: beatKey, ms: totalMs, timeoutMs: kimiTimeoutMs });
       sendJson(response, 200, {
         cue: directorCueFromReply("", text, beatKey, { scene, variables, age }),
         warning: upstreamPayload.error?.message || upstreamResponse.statusText,
@@ -301,17 +372,19 @@ async function handleDirectorCue(request, response) {
       });
       return;
     }
+    log("error", "moonshot_error", { beat: beatKey, status: upstreamResponse.status, ms: Date.now() - requestStartedAt });
     sendJson(response, upstreamResponse.status, {
       error: "moonshot_request_failed",
       message: upstreamPayload.error?.message || upstreamResponse.statusText,
       timing: {
         ...timing,
-        totalMs,
+        totalMs: Date.now() - requestStartedAt,
       },
     });
     return;
   }
 
+  log("info", "moonshot_ok", { beat: beatKey, ms: timing.upstreamMs });
   const content = upstreamPayload.choices?.[0]?.message?.content || "";
   const reply = extractReplyText(content);
   sendJson(response, 200, {
@@ -362,8 +435,21 @@ async function handleTts(request, response) {
     return;
   }
 
+  // Deduplicate concurrent requests for identical text+voice (A-3)
+  const ttsKey = `${voice}\0${text}`;
+  let pending = ttsInFlight.get(ttsKey);
+  if (!pending) {
+    const ttsStartedAt = Date.now();
+    log("info", "tts_request", { voice, chars: text.length });
+    pending = synthesizeXfyunTts(text, voice)
+      .then((buf) => { log("info", "tts_ok", { voice, chars: text.length, bytes: buf.length, ms: Date.now() - ttsStartedAt }); return buf; })
+      .catch((err) => { log("error", "tts_error", { voice, error: err.message }); throw err; })
+      .finally(() => ttsInFlight.delete(ttsKey));
+    ttsInFlight.set(ttsKey, pending);
+  }
+
   try {
-    const audio = await synthesizeXfyunTts(text, voice);
+    const audio = await pending;
     response.writeHead(200, {
       "Content-Type": "audio/mpeg",
       "Content-Length": audio.length,
@@ -378,6 +464,126 @@ async function handleTts(request, response) {
       message: error.message,
     });
   }
+}
+
+async function handleTtsStream(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "method_not_allowed" });
+    return;
+  }
+
+  if (!xfyunAppId || !xfyunApiKey || !xfyunApiSecret) {
+    sendJson(response, 503, {
+      error: "missing_xfyun_credentials",
+      message: "Server missing XFYUN_APP_ID, XFYUN_API_KEY or XFYUN_API_SECRET.",
+    });
+    return;
+  }
+
+  const body = await readJsonBody(request, 16 * 1024);
+  const text = cleanTtsText(typeof body.text === "string" ? body.text : "");
+  const voice = normalizeXfyunVoice(body.voice);
+  if (!text) {
+    sendJson(response, 400, { error: "invalid_request", message: "text is required." });
+    return;
+  }
+
+  response.writeHead(200, {
+    "Content-Type": "audio/mpeg",
+    "Transfer-Encoding": "chunked",
+    "Cache-Control": "no-store",
+    "X-TTS-Provider": "xfyun-super-smart-tts",
+    "X-TTS-Voice": voice,
+  });
+
+  const streamStartedAt = Date.now();
+  log("info", "tts_stream_request", { voice, chars: text.length });
+  try {
+    await synthesizeXfyunTtsToStream(text, voice, response);
+    log("info", "tts_stream_ok", { voice, ms: Date.now() - streamStartedAt });
+  } catch (err) {
+    log("error", "tts_stream_error", { voice, error: err.message });
+    // Headers already sent; just close the stream
+  }
+  response.end();
+}
+
+// Streams Xfyun TTS audio chunks to writeStream in sequence as they arrive.
+// Uses a seq-keyed pending map to ensure correct order even if packets arrive out of order.
+function synthesizeXfyunTtsToStream(text, voice, writeStream) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(buildXfyunAuthUrl(xfyunTtsUrl, xfyunApiKey, xfyunApiSecret));
+    const pending = new Map();
+    let nextSeq = 0;
+    let settled = false;
+
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch {}
+      fn(value);
+    };
+
+    const timer = setTimeout(
+      () => settle(reject, new Error("讯飞 TTS 请求超时")),
+      15000,
+    );
+
+    function flushInOrder() {
+      while (pending.has(nextSeq)) {
+        const buf = pending.get(nextSeq);
+        pending.delete(nextSeq);
+        nextSeq++;
+        if (!writeStream.destroyed) writeStream.write(buf);
+      }
+    }
+
+    ws.addEventListener("open", () => {
+      ws.send(JSON.stringify(buildXfyunTtsPayload(text, voice)));
+    });
+
+    ws.addEventListener("message", (event) => {
+      try {
+        const message = JSON.parse(String(event.data));
+        const code = message.header?.code ?? 0;
+        if (code !== 0) {
+          settle(reject, new Error(`讯飞 TTS 错误 ${code}: ${message.header?.message || "unknown"}`));
+          return;
+        }
+
+        const audio = message.payload?.audio;
+        if (audio?.audio) {
+          const seq = Number(audio.seq ?? nextSeq);
+          pending.set(seq, Buffer.from(audio.audio, "base64"));
+          flushInOrder();
+        }
+
+        if (message.header?.status === 2 || audio?.status === 2) {
+          // Flush any remaining out-of-order chunks before resolving
+          const remaining = [...pending.entries()].sort((a, b) => a[0] - b[0]);
+          for (const [, buf] of remaining) {
+            if (!writeStream.destroyed) writeStream.write(buf);
+          }
+          settle(resolve);
+        }
+      } catch (error) {
+        settle(reject, error);
+      }
+    });
+
+    ws.addEventListener("error", () => {
+      settle(reject, new Error("讯飞 TTS WebSocket 连接失败"));
+    });
+
+    ws.addEventListener("close", () => {
+      if (!settled && !pending.size && nextSeq === 0) {
+        settle(reject, new Error("讯飞 TTS 未返回音频"));
+      } else if (!settled) {
+        settle(resolve);
+      }
+    });
+  });
 }
 
 async function requestMoonshot(messages) {
@@ -455,6 +661,25 @@ async function requestMoonshot(messages) {
   return last;
 }
 
+function generateETag(stat) {
+  return `W/"${stat.mtimeMs.toString(36)}-${stat.size.toString(36)}"`;
+}
+
+function getGzippedBuffer(filePath, stat) {
+  const cached = gzipCache.get(filePath);
+  if (cached && cached.mtime === stat.mtimeMs) return Promise.resolve(cached.buffer);
+  return new Promise((resolve, reject) => {
+    fs.readFile(filePath, (readErr, raw) => {
+      if (readErr) return reject(readErr);
+      zlib.gzip(raw, (gzipErr, buffer) => {
+        if (gzipErr) return reject(gzipErr);
+        gzipCache.set(filePath, { mtime: stat.mtimeMs, buffer });
+        resolve(buffer);
+      });
+    });
+  });
+}
+
 async function serveStaticFile(pathname, request, response) {
   const cleanPath = decodeURIComponent(pathname.split("?")[0]);
   const relativePath = cleanPath === "/" ? "index.html" : cleanPath.replace(/^\/+/, "");
@@ -475,6 +700,14 @@ async function serveStaticFile(pathname, request, response) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = mimeTypes[ext] || "application/octet-stream";
   const cacheControl = staticCacheControl(ext);
+  const etag = generateETag(stat);
+
+  // ETag conditional request (B-4)
+  if (request.headers["if-none-match"] === etag) {
+    response.writeHead(304, { "ETag": etag, "Cache-Control": cacheControl });
+    response.end();
+    return;
+  }
 
   const range = request.headers.range;
   if (range) {
@@ -502,6 +735,7 @@ async function serveStaticFile(pathname, request, response) {
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
       "Accept-Ranges": "bytes",
       "Cache-Control": cacheControl,
+      "ETag": etag,
     });
     if (request.method === "HEAD") {
       response.end();
@@ -515,17 +749,21 @@ async function serveStaticFile(pathname, request, response) {
   const canGzip = acceptEncoding.includes("gzip") && compressibleExtensions.has(ext);
 
   if (canGzip) {
+    // Cached gzip buffer (B-3)
+    const buffer = await getGzippedBuffer(filePath, stat);
     response.writeHead(200, {
       "Content-Type": mimeType,
       "Content-Encoding": "gzip",
+      "Content-Length": buffer.length,
       "Cache-Control": cacheControl,
       "Vary": "Accept-Encoding",
+      "ETag": etag,
     });
     if (request.method === "HEAD") {
       response.end();
       return;
     }
-    fs.createReadStream(filePath).pipe(zlib.createGzip()).pipe(response);
+    response.end(buffer);
     return;
   }
 
@@ -534,6 +772,7 @@ async function serveStaticFile(pathname, request, response) {
     "Content-Length": stat.size,
     "Accept-Ranges": "bytes",
     "Cache-Control": cacheControl,
+    "ETag": etag,
   });
 
   if (request.method === "HEAD") {
@@ -544,6 +783,62 @@ async function serveStaticFile(pathname, request, response) {
   fs.createReadStream(filePath).pipe(response);
 }
 
+
+async function handleHealth(request, response) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    sendJson(response, 405, { error: "method_not_allowed" });
+    return;
+  }
+
+  let dbCheck = { ok: false };
+  try {
+    const db = await readDatabase();
+    dbCheck = { ok: true, scenes: Object.keys(db.layouts || {}).length };
+  } catch (error) {
+    dbCheck = { ok: false, error: error.message };
+  }
+
+  const mem = process.memoryUsage();
+  const healthy = dbCheck.ok;
+  sendJson(response, healthy ? 200 : 503, {
+    status: healthy ? "ok" : "degraded",
+    ts: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    memory: {
+      heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      rssMb: Math.round(mem.rss / 1024 / 1024),
+    },
+    checks: {
+      db: dbCheck,
+      moonshot: { configured: Boolean(moonshotApiKey) },
+      xfyun: { configured: Boolean(xfyunAppId && xfyunApiKey && xfyunApiSecret) },
+    },
+  });
+}
+
+function handleScriptBeats(response) {
+  sendJson(response, 200, { scriptBeats });
+}
+
+async function handleLogError(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const body = await readJsonBody(request, 4 * 1024);
+    const entry = {
+      ts: new Date().toISOString(),
+      message: String(body.message || "").slice(0, 500),
+      context: body.context || {},
+    };
+    const logPath = path.join(dataDir, "errors.log");
+    await fs.promises.appendFile(logPath, JSON.stringify(entry) + "\n", "utf8");
+    sendJson(response, 200, { ok: true });
+  } catch {
+    sendJson(response, 200, { ok: false });
+  }
+}
 
 function readJsonBody(request, maxBytes) {
   return new Promise((resolve, reject) => {
@@ -606,9 +901,22 @@ async function ensureDatabase() {
   return dbInitPromise;
 }
 
-async function writeDatabase(db) {
-  await fs.promises.mkdir(dataDir, { recursive: true });
-  await fs.promises.writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
+function withDbWriteLock(fn) {
+  dbWriteChain = dbWriteChain.then(fn).catch((err) => log("error", "db_persist_error", { error: err.message }));
+  return dbWriteChain;
+}
+
+function schedulePersist() {
+  clearTimeout(dbPersistTimer);
+  dbPersistTimer = setTimeout(() => withDbWriteLock(persistDatabase), 500);
+}
+
+async function persistDatabase() {
+  if (!dbCache) return;
+  const tmp = dbPath + ".tmp";
+  await fs.promises.writeFile(tmp, JSON.stringify(dbCache, null, 2), "utf8");
+  await fs.promises.rename(tmp, dbPath);
+  log("info", "db_persisted", { scenes: Object.keys(dbCache.layouts || {}).length });
 }
 
 async function listLayoutScenes(includeDetails = false) {
@@ -643,14 +951,14 @@ async function writeLayoutPayload(id, name, payload) {
     payload: { ...payload, id, name },
     updatedAt: new Date().toISOString(),
   };
-  await writeDatabase(db);
+  schedulePersist();
 }
 
 async function deleteLayoutPayload(id) {
   const db = await readDatabase();
   if (!db.layouts?.[id]) return false;
   delete db.layouts[id];
-  await writeDatabase(db);
+  schedulePersist();
   return true;
 }
 
@@ -662,7 +970,7 @@ async function readSettings() {
 async function writeSettings(nextSettings) {
   const db = await readDatabase();
   db.settings = normalizeSettings({ ...db.settings, ...nextSettings }, db.layouts);
-  await writeDatabase(db);
+  schedulePersist();
   return db.settings;
 }
 
@@ -747,14 +1055,17 @@ function sanitizeSceneName(value) {
 }
 
 async function readDatabase() {
+  if (dbCache) return dbCache;
   await ensureDatabase();
   try {
     const raw = await fs.promises.readFile(dbPath, "utf8");
     const db = JSON.parse(raw);
-    return await normalizeDatabase(db);
+    dbCache = await normalizeDatabase(db);
+    return dbCache;
   } catch (error) {
-    console.error("[db] Failed to read database, returning empty state:", error);
-    return { layouts: {} };
+    log("error", "db_read_failed", { error: error.message });
+    dbCache = { layouts: {} };
+    return dbCache;
   }
 }
 
@@ -797,7 +1108,8 @@ async function normalizeDatabase(db) {
   }
 
   if (changed) {
-    await writeDatabase(db);
+    log("info", "db_migrated", { scenes: Object.keys(db.layouts).length });
+    schedulePersist();
   }
   return db;
 }
@@ -848,6 +1160,7 @@ function safeJsonParse(value) {
 }
 
 async function listAssets() {
+  if (assetsCache) return assetsCache;
   const roots = [
     { dir: path.join(rootDir, "mat"), base: "mat" },
     { dir: uploadsDir, base: "uploads" },
@@ -856,7 +1169,8 @@ async function listAssets() {
   for (const root of roots) {
     await collectAssetFiles(root.dir, root.base, files);
   }
-  return files.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  assetsCache = files.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  return assetsCache;
 }
 
 async function collectAssetFiles(dir, base, files) {
@@ -906,7 +1220,7 @@ function synthesizeXfyunTts(text, voice) {
 
     const timer = setTimeout(
       () => settle(reject, new Error("讯飞 TTS 请求超时")),
-      30000,
+      15000,
     );
 
     ws.addEventListener("open", () => {

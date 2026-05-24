@@ -144,12 +144,12 @@ const state = {
   userVariables: {},
   pendingAgeFlow: null,
   activeTts: null,
-  gifElements: new Map(),
-  gifPlayers: new Map(),
-  gifPauseFrames: new Map(),
+  gifState: new Map(), // id → { element, player, pauseFrame }
   scenePlaybackToken: 0,
   paused: isFinal || isIntroDemo,
   transitionToken: 0,
+  itemsSortDirty: true,
+  _sortedItems: [],
   voice: {
     recognition: null,
     listening: false,
@@ -161,7 +161,7 @@ const state = {
     micAnalyser: null,
     micLevelTimer: null,
     micMonitoring: false,
-    minListenMs: 10000,
+    minListenMs: 3000,
     listenStartedAt: 0,
     listenStopTimer: null,
     manualStop: false,
@@ -230,7 +230,7 @@ async function init() {
   resize();
   await loadInitialScene();
   syncControls();
-  requestAnimationFrame(draw);
+  startDrawLoop();
   if (isViewer) {
     ui.viewerStartButton?.addEventListener("click", () => {
       startCamera();
@@ -243,7 +243,15 @@ async function init() {
 }
 
 function bindEvents() {
-  on(window, "resize", resize);
+  if (window.ResizeObserver) {
+    let resizeDebounce = null;
+    new ResizeObserver(() => {
+      clearTimeout(resizeDebounce);
+      resizeDebounce = setTimeout(resize, 16);
+    }).observe(canvas);
+  } else {
+    on(window, "resize", resize);
+  }
   on(window, "pointerdown", () => playSceneAudio(), { once: true });
   on(window, "keydown", () => playSceneAudio(), { once: true });
 
@@ -446,6 +454,7 @@ function bindEvents() {
       const selected = getSelected();
       if (!selected) return;
       selected[rangeConfigs[id].itemKey] = rangeToValue(id, ui[id].value);
+      if (id === "zRange") markItemsSortDirty();
       updateRangeDisplays();
       renderLayerList();
       scheduleSaveLayout();
@@ -466,7 +475,7 @@ function bindEvents() {
     selected.x = state.dragging.startX + (event.clientX - state.dragging.clientX) / depthScale;
     selected.y = state.dragging.startY + (event.clientY - state.dragging.clientY) / depthScale;
     syncControls();
-    renderLayerList();
+    // skip renderLayerList during drag — rebuild once on pointerup (F-4)
     scheduleSaveLayout();
   });
 
@@ -488,11 +497,13 @@ function bindEvents() {
   });
 
   on(canvas, "pointerup", (event) => {
+    const wasDragging = state.dragging !== null;
     state.dragging = null;
     canvas.classList.remove("dragging");
     if (canvas.hasPointerCapture(event.pointerId)) {
       canvas.releasePointerCapture(event.pointerId);
     }
+    if (wasDragging) renderLayerList(); // rebuild once after drag ends (F-4)
   });
 
   on(
@@ -504,6 +515,7 @@ function bindEvents() {
       if (!selected) return;
       event.preventDefault();
       selected.z = clamp(selected.z + event.deltaY * 0.45, -260, 980);
+      markItemsSortDirty();
       syncControls();
       renderLayerList();
       scheduleSaveLayout();
@@ -1687,7 +1699,7 @@ function isScenePlaybackFinished() {
     state.gifLoop ||
     state.items
       .filter((item) => item.mediaType === "gif")
-      .every((item) => state.gifPlayers.get(item.id)?.ended === true || !("ImageDecoder" in window));
+      .every((item) => state.gifState.get(item.id)?.player?.ended === true || !("ImageDecoder" in window));
   const webmDone =
     state.webmLoop ||
     state.items
@@ -1946,7 +1958,7 @@ function createSceneGhost({ freeze = false } = {}) {
   backdrop.src = canvas.toDataURL("image/png");
   ghost.append(backdrop);
 
-  state.gifElements.forEach((element) => {
+  state.gifState.forEach(({ element }) => {
     if (freeze) {
       const frame = document.createElement("canvas");
       frame.className = "gif-pause-frame scene-ghost-gif-frame";
@@ -1980,7 +1992,7 @@ async function waitForNextSceneVisualReady() {
   updateGifOverlays();
   await nextAnimationFrame();
   updateGifOverlays();
-  const gifImages = [...state.gifElements.values()].filter((element) => element.tagName === "IMG");
+  const gifImages = [...state.gifState.values()].map((gs) => gs.element).filter((el) => el?.tagName === "IMG");
   const gifReady = gifImages.map((image) => waitForImageElementReady(image));
   const videosReady = state.items
     .filter((item) => item.mediaType === "video")
@@ -2177,7 +2189,8 @@ async function restoreLayoutItems(items, preloadedAssets = new Map()) {
     applyLayoutRecord(item, record);
     state.items.push(item);
   }
-  state.selectedId = isEditor ? state.items[0]?.id ?? null : null;
+  state.selectedId = isViewer ? null : state.items[0]?.id ?? null;
+  markItemsSortDirty();
   syncControls();
   renderLayerList();
 }
@@ -2190,23 +2203,25 @@ function clearSceneMedia() {
       item.media.load?.();
     }
   });
-  state.gifElements.forEach((element) => element.remove());
-  state.gifElements.clear();
-  state.gifPlayers.forEach((player) => releaseGifPlayer(player));
-  state.gifPlayers.clear();
-  state.gifPauseFrames.forEach((frame) => frame.remove());
-  state.gifPauseFrames.clear();
+  state.gifState.forEach(({ element, player, pauseFrame }) => {
+    element?.remove();
+    pauseFrame?.remove();
+    releaseGifPlayer(player);
+  });
+  state.gifState.clear();
   state.items = [];
+  state._sortedItems = [];
+  state.itemsSortDirty = true;
   state.selectedId = null;
 }
 
 function resetGifPlayback() {
-  state.gifElements.forEach((element) => element.remove());
-  state.gifElements.clear();
-  state.gifPlayers.forEach((player) => releaseGifPlayer(player));
-  state.gifPlayers.clear();
-  state.gifPauseFrames.forEach((frame) => frame.remove());
-  state.gifPauseFrames.clear();
+  state.gifState.forEach(({ element, player, pauseFrame }) => {
+    element?.remove();
+    pauseFrame?.remove();
+    releaseGifPlayer(player);
+  });
+  state.gifState.clear();
 }
 
 function applyLayoutRecord(item, record) {
@@ -2420,6 +2435,27 @@ function makeDemoTexture(colors, mark) {
   return buffer.toDataURL("image/png");
 }
 
+let drawRafId = null;
+
+function startDrawLoop() {
+  if (drawRafId !== null) return;
+  function loop() {
+    draw();
+    drawRafId = requestAnimationFrame(loop);
+  }
+  drawRafId = requestAnimationFrame(loop);
+}
+
+function stopDrawLoop() {
+  if (drawRafId !== null) cancelAnimationFrame(drawRafId);
+  drawRafId = null;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopDrawLoop();
+  else startDrawLoop();
+});
+
 function draw() {
   updateHead();
   ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
@@ -2428,7 +2464,6 @@ function draw() {
   drawItems();
   updateGifOverlays();
   drawReticle();
-  requestAnimationFrame(draw);
 }
 
 function updateHead() {
@@ -2494,9 +2529,16 @@ function drawPerspectiveGrid() {
   ctx.restore();
 }
 
+function markItemsSortDirty() {
+  state.itemsSortDirty = true;
+}
+
 function drawItems() {
-  const sorted = [...state.items].sort((a, b) => b.z - a.z);
-  for (const item of sorted) drawItem(item);
+  if (state.itemsSortDirty) {
+    state._sortedItems = [...state.items].sort((a, b) => b.z - a.z);
+    state.itemsSortDirty = false;
+  }
+  for (const item of state._sortedItems) drawItem(item);
 }
 
 function drawItem(item) {
@@ -2577,42 +2619,43 @@ function updateGifOverlays() {
     if (element.tagName === "CANVAS") advanceGifPlayer(item.id);
   });
 
-  for (const [id, element] of state.gifElements) {
+  for (const [id, gs] of state.gifState) {
     if (visibleGifIds.has(id)) continue;
-    element.remove();
-    state.gifElements.delete(id);
-    state.gifPauseFrames.get(id)?.remove();
-    state.gifPauseFrames.delete(id);
-    releaseGifPlayer(state.gifPlayers.get(id));
-    state.gifPlayers.delete(id);
+    gs.element?.remove();
+    gs.pauseFrame?.remove();
+    releaseGifPlayer(gs.player);
+    state.gifState.delete(id);
   }
 }
 
 function ensureGifOverlayElement(item) {
   const shouldUseCanvas = !state.gifLoop && "ImageDecoder" in window;
-  let element = state.gifElements.get(item.id);
+  let gs = state.gifState.get(item.id);
+  const element = gs?.element;
   const needsReplacement =
     !element || (shouldUseCanvas && element.tagName !== "CANVAS") || (!shouldUseCanvas && element.tagName !== "IMG");
 
   if (needsReplacement) {
-    element?.remove();
-    state.gifPauseFrames.get(item.id)?.remove();
-    state.gifPauseFrames.delete(item.id);
-    releaseGifPlayer(state.gifPlayers.get(item.id));
-    state.gifPlayers.delete(item.id);
+    if (gs) {
+      gs.element?.remove();
+      gs.pauseFrame?.remove();
+      releaseGifPlayer(gs.player);
+    }
 
-    element = document.createElement(shouldUseCanvas ? "canvas" : "img");
-    element.className = "gif-layer";
-    element.alt = "";
-    if (!shouldUseCanvas) element.src = scenePlaybackUrl(item.assetUrl || item.src);
-    ui.mediaOverlay.append(element);
-    state.gifElements.set(item.id, element);
+    const newElement = document.createElement(shouldUseCanvas ? "canvas" : "img");
+    newElement.className = "gif-layer";
+    newElement.alt = "";
+    if (!shouldUseCanvas) newElement.src = scenePlaybackUrl(item.assetUrl || item.src);
+    ui.mediaOverlay.append(newElement);
+
+    gs = { element: newElement, player: null, pauseFrame: null };
+    state.gifState.set(item.id, gs);
 
     if (shouldUseCanvas) {
       const player = {
         id: item.id,
-        canvas: element,
-        context: element.getContext("2d"),
+        canvas: newElement,
+        context: newElement.getContext("2d"),
         frames: [],
         index: 0,
         lastAt: performance.now(),
@@ -2621,12 +2664,12 @@ function ensureGifOverlayElement(item) {
         cancelled: false,
         source: scenePlaybackUrl(item.assetUrl || item.src),
       };
-      state.gifPlayers.set(item.id, player);
+      gs.player = player;
       decodeGifFrames(player);
     }
   }
 
-  return element;
+  return gs.element;
 }
 
 async function decodeGifFrames(player) {
@@ -2674,7 +2717,7 @@ function normalizeGifFrameDuration(duration) {
 }
 
 function advanceGifPlayer(id) {
-  const player = state.gifPlayers.get(id);
+  const player = state.gifState.get(id)?.player;
   if (!player || !player.frames.length) return;
   if (state.paused || player.ended) {
     drawGifPlayerFrame(player);
@@ -2721,28 +2764,29 @@ function releaseGifPlayer(player) {
 }
 
 function syncGifPauseFrame(id, element) {
-  let frame = state.gifPauseFrames.get(id);
+  const gs = state.gifState.get(id);
+  if (!gs) return;
   if (!state.paused) {
-    frame?.remove();
-    state.gifPauseFrames.delete(id);
+    gs.pauseFrame?.remove();
+    gs.pauseFrame = null;
     resumeGifElement(element);
     return;
   }
 
-  if (!frame) {
-    frame = document.createElement("canvas");
+  if (!gs.pauseFrame) {
+    const frame = document.createElement("canvas");
     frame.className = "gif-pause-frame";
     ui.mediaOverlay.append(frame);
-    state.gifPauseFrames.set(id, frame);
+    gs.pauseFrame = frame;
     captureGifFrame(element, frame);
     pauseGifElement(element);
   }
 
-  frame.style.width = element.style.width;
-  frame.style.height = element.style.height;
-  frame.style.transform = element.style.transform;
-  frame.style.zIndex = element.style.zIndex;
-  frame.style.opacity = element.style.opacity;
+  gs.pauseFrame.style.width = element.style.width;
+  gs.pauseFrame.style.height = element.style.height;
+  gs.pauseFrame.style.transform = element.style.transform;
+  gs.pauseFrame.style.zIndex = element.style.zIndex;
+  gs.pauseFrame.style.opacity = element.style.opacity;
 }
 
 function captureGifFrame(element, frame) {
@@ -2777,20 +2821,21 @@ function togglePlayback() {
   ui.playPauseButton?.setAttribute("aria-label", state.paused ? "播放画面" : "暂停画面");
   if (!state.paused) {
     if (isIntroEmbed && wasPaused) restartScenePlayback({ autoplay: true });
-    state.gifPauseFrames.forEach((frame) => frame.remove());
-    state.gifPauseFrames.clear();
-    state.gifElements.forEach((element) => resumeGifElement(element));
+    state.gifState.forEach((gs) => {
+      gs.pauseFrame?.remove();
+      gs.pauseFrame = null;
+      resumeGifElement(gs.element);
+    });
   } else {
-    state.gifElements.forEach((element, id) => {
-      let frame = state.gifPauseFrames.get(id);
-      if (!frame) {
-        frame = document.createElement("canvas");
+    state.gifState.forEach((gs) => {
+      if (!gs.pauseFrame) {
+        const frame = document.createElement("canvas");
         frame.className = "gif-pause-frame";
         ui.mediaOverlay.append(frame);
-        state.gifPauseFrames.set(id, frame);
+        gs.pauseFrame = frame;
       }
-      captureGifFrame(element, frame);
-      pauseGifElement(element);
+      captureGifFrame(gs.element, gs.pauseFrame);
+      pauseGifElement(gs.element);
     });
   }
   state.items.forEach((item) => {
@@ -2988,6 +3033,7 @@ function autoLayout() {
     item.rotation = degreesToRadians(Math.sin(angle) * 12);
     item.tilt = degreesToRadians(Math.cos(angle * 0.7) * 24);
   });
+  markItemsSortDirty();
   scheduleSaveLayout();
 }
 
@@ -2995,8 +3041,14 @@ function deleteSelected() {
   const selected = getSelected();
   if (!selected) return;
   state.items = state.items.filter((item) => item.id !== selected.id);
-  state.gifElements.get(selected.id)?.remove();
-  state.gifElements.delete(selected.id);
+  markItemsSortDirty();
+  const deletedGs = state.gifState.get(selected.id);
+  if (deletedGs) {
+    deletedGs.element?.remove();
+    deletedGs.pauseFrame?.remove();
+    releaseGifPlayer(deletedGs.player);
+    state.gifState.delete(selected.id);
+  }
   state.selectedId = state.items[0]?.id ?? null;
   syncControls();
   renderLayerList();
@@ -3375,8 +3427,16 @@ async function createMediaPipeTracker() {
   };
 }
 
+let _trackFrameSkip = 0;
+const TRACK_EVERY_N_FRAMES = 3; // ~20fps at 60fps render (F-5)
+
 async function trackCameraFrame() {
   if (!state.cameraOn || !state.tracker) return;
+  _trackFrameSkip = (_trackFrameSkip + 1) % TRACK_EVERY_N_FRAMES;
+  if (_trackFrameSkip !== 0) {
+    requestAnimationFrame(trackCameraFrame);
+    return;
+  }
   try {
     const detected = await state.tracker.detect(ui.cameraPreview);
     if (detected) {
@@ -3531,7 +3591,7 @@ function toggleVoiceListening() {
     state.voice.listenStartedAt = Date.now();
     ui.voiceButton.classList.add("active");
     ui.voiceButton.textContent = "停止聆听";
-    ui.voiceTranscript.textContent = "正在听，请说话。至少会听 10 秒。";
+    ui.voiceTranscript.textContent = "正在听，请说话。至少会听 3 秒。";
     setVoiceStatus("正在聆听观众说话", "listening");
     startMicLevelMonitor();
     clearTimeout(state.voice.listenStopTimer);
@@ -3596,7 +3656,7 @@ function getSpeechRecognition() {
     const elapsed = Date.now() - state.voice.listenStartedAt;
     if (state.voice.listening && !state.voice.manualStop && elapsed < state.voice.minListenMs) {
       state.voice.restartingRecognition = true;
-      setVoiceStatus("识别暂停，继续聆听到 10 秒", "listening");
+      setVoiceStatus("识别暂停，继续聆听中", "listening");
       setTimeout(() => {
         try {
           if (state.voice.listening && !state.voice.manualStop) recognition.start();
@@ -3673,11 +3733,11 @@ async function handleAudienceSpeech(text) {
         return;
       }
       const cue = await getDirectorCue(text);
-      await applyCueFlow(cue);
       const reply = cue.reply || makeFinalReply(text, switched);
       ui.voiceReply.textContent = reply;
       updateCaption(reply);
-      speakReply(reply);
+      speakReply(reply);  // Start TTS in parallel with scene transition
+      await applyCueFlow(cue);
       state.voice.conversation.push({ role: "user", content: text }, { role: "assistant", content: reply });
       state.voice.conversation = state.voice.conversation.slice(-10);
       if (cue.nextBeat && scriptBeats[cue.nextBeat]) ui.scriptBeatSelect.value = cue.nextBeat;
@@ -3713,12 +3773,12 @@ async function handleAudienceSpeech(text) {
       return;
     }
     const cue = await getDirectorCue(text);
-    await applyCueFlow(cue);
-    applyDirectorCue(cue);
     const reply = cue.reply || "我听见了。画面会跟着你的选择继续向前。";
     ui.voiceReply.textContent = reply;
     updateCaption(reply);
-    speakReply(reply);
+    speakReply(reply);  // Start TTS in parallel with scene transition
+    await applyCueFlow(cue);
+    applyDirectorCue(cue);
     state.voice.conversation.push({ role: "user", content: text }, { role: "assistant", content: reply });
     state.voice.conversation = state.voice.conversation.slice(-10);
     setVoiceStatus(`已回应：${getCurrentBeat().title}`);
@@ -4062,19 +4122,22 @@ function speakReply(text) {
 async function playXfyunTts(text) {
   if (!text) return;
   setVoiceStatus("正在用讯飞聆飞逸合成语音", "thinking");
+
+  // Progressive streaming via MediaSource: audio starts at first chunk, not after all synthesis
+  if (typeof MediaSource !== "undefined" && MediaSource.isTypeSupported("audio/mpeg")) {
+    return playXfyunTtsStream(text);
+  }
+
+  // Fallback for browsers without MP3 MediaSource support
   const response = await fetch("/api/tts", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, voice: state.xfyunVoice }),
   });
-
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.message || payload.error || response.statusText);
   }
-
   const blob = await response.blob();
   const audioUrl = URL.createObjectURL(blob);
   const audio = new Audio(audioUrl);
@@ -4085,6 +4148,68 @@ async function playXfyunTts(text) {
     audio.addEventListener("ended", resolve, { once: true });
     audio.addEventListener("error", resolve, { once: true });
   });
+}
+
+async function playXfyunTtsStream(text) {
+  const response = await fetch("/api/tts-stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, voice: state.xfyunVoice }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || payload.error || response.statusText);
+  }
+
+  const mediaSource = new MediaSource();
+  const objectUrl = URL.createObjectURL(mediaSource);
+  const audio = new Audio(objectUrl);
+  audio.addEventListener("error", () => URL.revokeObjectURL(objectUrl), { once: true });
+
+  const sbReady = new Promise((resolve, reject) => {
+    mediaSource.addEventListener(
+      "sourceopen",
+      () => {
+        try {
+          resolve(mediaSource.addSourceBuffer("audio/mpeg"));
+        } catch (e) {
+          reject(e);
+        }
+      },
+      { once: true },
+    );
+  });
+
+  // Start playback eagerly — audio begins as soon as the first chunk lands
+  audio.play().catch(() => {});
+  const sb = await sbReady;
+  const reader = response.body.getReader();
+
+  const waitForUpdateEnd = () =>
+    new Promise((r) => sb.addEventListener("updateend", r, { once: true }));
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (sb.updating) await waitForUpdateEnd();
+      sb.appendBuffer(value);
+      await waitForUpdateEnd();
+    }
+    if (sb.updating) await waitForUpdateEnd();
+    if (mediaSource.readyState === "open") mediaSource.endOfStream();
+  } catch {
+    try {
+      mediaSource.endOfStream("decode");
+    } catch {}
+  }
+
+  await new Promise((resolve) => {
+    if (audio.ended) { resolve(); return; }
+    audio.addEventListener("ended", resolve, { once: true });
+    audio.addEventListener("error", resolve, { once: true });
+  });
+  URL.revokeObjectURL(objectUrl);
 }
 
 function getCurrentBeat() {
