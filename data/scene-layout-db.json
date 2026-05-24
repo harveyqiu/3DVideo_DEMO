@@ -191,7 +191,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-16T08:57:11.174Z"
+      "updatedAt": "2026-05-24T04:51:37.828Z"
     },
     "w1-mos8b1bn": {
       "name": "W1",
@@ -2519,6 +2519,15 @@
     }
   },
   "settings": {
-    "finalStartSceneId": "default"
+    "finalStartSceneId": "a1-mos899qj",
+    "activeSceneGroupId": "default-group",
+    "finalSceneGroupId": "default-group",
+    "sceneGroups": [
+      {
+        "id": "default-group",
+        "name": "默认场景组",
+        "finalStartSceneId": "a1-mos899qj"
+      }
+    ]
   }
 }

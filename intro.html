@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>三维交互视频项目总览</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="intro-page">
+    <div id="app" class="intro-app">
+      <header class="intro-hero">
+        <video
+          class="intro-hero-media"
+          autoplay
+          muted
+          loop
+          playsinline
+          src="./public/uploads/b79017f796b496be6abec3d619919f32.mp4"
+        ></video>
+        <div class="intro-hero-shade" aria-hidden="true"></div>
+        <nav class="intro-nav" aria-label="项目入口">
+          <a href="./intro.html" aria-current="page">项目总览</a>
+          <a href="./index.html">编辑器</a>
+          <a href="./final.html">最终展示</a>
+        </nav>
+        <section class="intro-hero-copy">
+          <h1>三维交互视频演示系统</h1>
+          <p>
+            基于 Canvas 透视空间、透明动态图层、摄像头视线追踪和语音分支逻辑，
+            将多个场景组装成可交互的连续视频体验。
+          </p>
+          <div class="intro-actions">
+            <a class="intro-primary" href="./final.html">进入最终展示</a>
+            <a class="intro-secondary" href="./index.html">打开编辑器</a>
+          </div>
+        </section>
+      </header>
+
+      <main class="intro-main">
+        <section class="intro-band intro-summary" aria-label="项目内容">
+          <div>
+            <span class="intro-label">Project</span>
+            <h2>作品内容集合</h2>
+          </div>
+          <p>
+            本页用于集中呈现参赛项目的核心材料：可运行的交互展示、可编辑的场景工具、
+            演示视频预览和项目文档。评审可以从这里直接进入产品体验。
+          </p>
+        </section>
+
+        <section class="intro-grid" aria-label="核心入口">
+          <article class="intro-entry intro-entry-live">
+            <div>
+              <span class="intro-label">Live Demo</span>
+              <h2>最终展示页</h2>
+              <p>从已配置的场景组开始播放，包含视线追踪、场景音频、动态图层和对话跳转。</p>
+            </div>
+            <a href="./final.html">打开 final.html</a>
+          </article>
+          <article class="intro-entry">
+            <div>
+              <span class="intro-label">Editor</span>
+              <h2>场景编辑器</h2>
+              <p>导入 PNG/GIF/WebM/MOV，调整位置、深度、循环、音频和场景跳转关系。</p>
+            </div>
+            <a href="./index.html">打开编辑器</a>
+          </article>
+        </section>
+
+        <section class="intro-media" aria-label="演示视频和文档">
+          <div class="intro-video-panel">
+            <div class="intro-section-head">
+              <span class="intro-label">Video</span>
+              <h2>演示视频预览</h2>
+            </div>
+            <iframe
+              class="intro-network-video"
+              title="Bilibili 演示视频"
+              src="https://player.bilibili.com/player.html?isOutside=true&aid=1104217266&bvid=BV1Qw4m1X7VW&cid=1533784562&p=1"
+              scrolling="no"
+              frameborder="0"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowfullscreen
+            ></iframe>
+            <div class="intro-link-row">
+              <a
+                href="https://www.bilibili.com/video/BV1Qw4m1X7VW/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 Bilibili 视频
+              </a>
+              <a href="./final.html" target="_blank" rel="noreferrer">进入实时演示</a>
+            </div>
+          </div>
+
+          <div class="intro-doc-panel">
+            <div class="intro-section-head">
+              <span class="intro-label">Document</span>
+              <h2>演示文档</h2>
+            </div>
+            <p>
+              文档包含本地运行方式、页面结构、API、场景数据、部署说明和常见问题，
+              适合作为评审或后续开发的技术说明入口。
+            </p>
+            <a class="intro-doc-link" href="./README.md" target="_blank" rel="noreferrer">打开 README 演示文档</a>
+          </div>
+        </section>
+
+        <section class="intro-flow" aria-label="体验流程">
+          <div class="intro-section-head">
+            <span class="intro-label">Flow</span>
+            <h2>推荐体验路径</h2>
+          </div>
+          <ol>
+            <li>
+              <strong>项目总览</strong>
+              <span>从本页了解作品目标、材料入口和演示方式。</span>
+            </li>
+            <li>
+              <strong>最终展示</strong>
+              <span>进入 final 页，开启摄像头后体验头部/视线变化带来的空间跟随。</span>
+            </li>
+            <li>
+              <strong>编辑器配置</strong>
+              <span>进入编辑器查看场景组、素材图层、音频循环和分支跳转设置。</span>
+            </li>
+          </ol>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
