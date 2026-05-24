@@ -1633,7 +1633,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-07T16:28:11.830Z"
+      "updatedAt": "2026-05-24T10:49:28.146Z"
     },
     "y3-mouapwaz": {
       "name": "Y3",
@@ -2661,7 +2661,7 @@
           "webmLoop": false,
           "flow": {
             "mode": "auto",
-            "nextSceneId": "h2-motzlpd2",
+            "nextSceneId": "d2-荒岛求生-副本-mpjnok0v",
             "routes": [
               {
                 "keywords": "水",
@@ -2722,13 +2722,166 @@
           }
         ]
       },
-      "updatedAt": "2026-05-24T07:34:57.899Z"
+      "updatedAt": "2026-05-24T10:50:43.409Z"
     },
     "d1-h-mpjgpvmr": {
       "name": "D1-H",
       "payload": {
         "id": "d1-h-mpjgpvmr",
         "name": "D1-H",
+        "scene": {
+          "focal": 715,
+          "parallax": 180,
+          "showGrid": false,
+          "audioAsset": {
+            "key": "uploads/D1.mp3",
+            "name": "D1.mp3",
+            "url": "/uploads/D1.mp3",
+            "type": "audio/mpeg",
+            "size": 170159
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": false,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "d2-荒岛求生-副本-mpjnok0v",
+            "routes": [
+              {
+                "keywords": "水",
+                "sceneId": "a1-mos899qj"
+              },
+              {
+                "keywords": "火",
+                "sceneId": "t2-motyjdhn"
+              }
+            ]
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": [
+          {
+            "id": "bd066406-7525-4220-aa3d-31017f4fab3d",
+            "name": "D1-1.webm",
+            "assetKey": "uploads/D1-1.webm",
+            "assetUrl": "/uploads/D1-1.webm",
+            "assetType": "video/webm",
+            "x": -21.75259297575365,
+            "y": 110.3310226275938,
+            "z": -260,
+            "scale": 0.448,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "2e1187c6-5f15-4e28-8a99-1bd50d2ad330",
+            "name": "D1-2.png",
+            "assetKey": "uploads/D1-2.png",
+            "assetUrl": "/uploads/D1-2.png",
+            "assetType": "image/png",
+            "x": 2.9267628596833273,
+            "y": 320,
+            "z": -151.6,
+            "scale": 1.151,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          },
+          {
+            "id": "77686d3c-ceeb-4741-967d-24d35321fc1f",
+            "name": "D1-3.webm",
+            "assetKey": "uploads/D1-3.webm",
+            "assetUrl": "/uploads/D1-3.webm",
+            "assetType": "video/webm",
+            "x": -21.638581747841968,
+            "y": 51.19999999999999,
+            "z": -24.400000000000006,
+            "scale": 0.855,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-24T10:50:52.864Z"
+    },
+    "快速体验沉浸式3d效果-起始场景-mpjlrel8": {
+      "name": "D2 场景体验",
+      "payload": {
+        "id": "快速体验沉浸式3d效果-起始场景-mpjlrel8",
+        "name": "D2 场景体验",
+        "scene": {
+          "focal": 860,
+          "parallax": 180,
+          "showGrid": true,
+          "audioAsset": null,
+          "audioLoop": true,
+          "gifLoop": true,
+          "webmLoop": true,
+          "flow": {
+            "mode": "none",
+            "nextSceneId": "",
+            "routes": []
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": [
+          {
+            "id": "30b510bd-fddb-4ca2-96e6-ebcb63153c0b",
+            "name": "1.png",
+            "assetKey": "uploads/1.png",
+            "assetUrl": "/uploads/1.png",
+            "assetType": "image/png",
+            "x": 611.3820719181646,
+            "y": -52.27660426520267,
+            "z": -30,
+            "scale": 1.6320000000000001,
+            "rotation": -0.17453292519943295,
+            "tilt": -0.2879793265790644,
+            "alpha": 1
+          },
+          {
+            "id": "34f1e431-a474-4830-9ec1-815bcfd2ca3c",
+            "name": "2-1.png",
+            "assetKey": "uploads/2-1.png",
+            "assetUrl": "/uploads/2-1.png",
+            "assetType": "image/png",
+            "x": -520,
+            "y": 320,
+            "z": 208.39999999999998,
+            "scale": 1.0030000000000001,
+            "rotation": -0.08726646259971647,
+            "tilt": -0.09599310885968812,
+            "alpha": 1
+          },
+          {
+            "id": "db3d7777-bb2a-45b2-8dfe-5f86d4c5bc46",
+            "name": "3-3.webm",
+            "assetKey": "uploads/3-3.webm",
+            "assetUrl": "/uploads/3-3.webm",
+            "assetType": "video/webm",
+            "x": -239.2,
+            "y": 38.400000000000034,
+            "z": 467,
+            "scale": 2.076,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-24T10:53:09.050Z"
+    },
+    "d2-荒岛求生-mpjnl86s": {
+      "name": "D2 荒岛求生",
+      "payload": {
+        "id": "d2-荒岛求生-mpjnl86s",
+        "name": "D2 荒岛求生",
         "scene": {
           "focal": 715,
           "parallax": 180,
@@ -2806,12 +2959,81 @@
           }
         ]
       },
-      "updatedAt": "2026-05-24T07:35:07.120Z"
+      "updatedAt": "2026-05-24T10:48:36.323Z"
+    },
+    "d2-荒岛求生-副本-mpjnok0v": {
+      "name": "D2 荒岛求生 副本",
+      "payload": {
+        "id": "d2-荒岛求生-副本-mpjnok0v",
+        "name": "D2 荒岛求生 副本",
+        "scene": {
+          "focal": 860,
+          "parallax": 180,
+          "showGrid": true,
+          "audioAsset": null,
+          "audioLoop": true,
+          "gifLoop": true,
+          "webmLoop": true,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "h2-motzlpd2",
+            "routes": []
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": [
+          {
+            "id": "30b510bd-fddb-4ca2-96e6-ebcb63153c0b",
+            "name": "1.png",
+            "assetKey": "uploads/1.png",
+            "assetUrl": "/uploads/1.png",
+            "assetType": "image/png",
+            "x": 611.3820719181646,
+            "y": -52.27660426520267,
+            "z": -30,
+            "scale": 1.6320000000000001,
+            "rotation": -0.17453292519943295,
+            "tilt": -0.2879793265790644,
+            "alpha": 1
+          },
+          {
+            "id": "34f1e431-a474-4830-9ec1-815bcfd2ca3c",
+            "name": "2-1.png",
+            "assetKey": "uploads/2-1.png",
+            "assetUrl": "/uploads/2-1.png",
+            "assetType": "image/png",
+            "x": -520,
+            "y": 320,
+            "z": -61.599999999999994,
+            "scale": 1.0030000000000001,
+            "rotation": -0.08726646259971647,
+            "tilt": -0.09599310885968812,
+            "alpha": 1
+          },
+          {
+            "id": "db3d7777-bb2a-45b2-8dfe-5f86d4c5bc46",
+            "name": "3-3.webm",
+            "assetKey": "uploads/3-3.webm",
+            "assetUrl": "/uploads/3-3.webm",
+            "assetType": "video/webm",
+            "x": -239.2,
+            "y": 38.400000000000034,
+            "z": 467,
+            "scale": 2.076,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-24T10:51:00.335Z"
     }
   },
   "settings": {
     "finalStartSceneId": "a1-mos899qj",
-    "activeSceneGroupId": "default-group",
+    "activeSceneGroupId": "快速体验沉浸式3d效果-mpjlrel8",
     "finalSceneGroupId": "default-group",
     "sceneGroups": [
       {
@@ -2837,6 +3059,12 @@
           "type": "image/jpeg",
           "size": 81210
         }
+      },
+      {
+        "id": "快速体验沉浸式3d效果-mpjlrel8",
+        "name": "快速体验沉浸式3D效果",
+        "finalStartSceneId": "快速体验沉浸式3d效果-起始场景-mpjlrel8",
+        "coverAsset": null
       }
     ]
   }

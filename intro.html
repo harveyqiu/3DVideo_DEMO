@@ -24,57 +24,32 @@
         </nav>
         <section class="intro-hero-copy">
           <h1>三维交互视频演示系统</h1>
-          <p>
-            基于 Canvas 透视空间、透明动态图层、摄像头视线追踪和语音分支逻辑，
-            将多个场景组装成可交互的连续视频体验。
-          </p>
+          <p>从「观看故事」到「参与故事」，重新定义下一代视频体验。</p>
           <div class="intro-actions">
             <a class="intro-primary" href="./final.html">进入最终展示</a>
             <a class="intro-secondary" href="./index.html">打开编辑器</a>
           </div>
         </section>
+        <a class="intro-scroll-cue" href="#introContent" aria-label="下滑了解更多">
+          <span>下滑了解更多</span>
+          <strong aria-hidden="true">↓</strong>
+        </a>
       </header>
 
-      <main class="intro-main">
-        <section class="intro-band intro-summary" aria-label="项目内容">
+      <main id="introContent" class="intro-main">
+        <section class="intro-band intro-summary" aria-label="作品内容集合">
           <div>
             <span class="intro-label">Project</span>
             <h2>作品内容集合</h2>
           </div>
           <p>
-            本页用于集中呈现参赛项目的核心材料：可运行的交互展示、可编辑的场景工具、
-            演示视频预览和项目文档。评审可以从这里直接进入产品体验。
+            传统视频是单向的——剧情已经写好，观众只能观看。<br />
+            而在这个项目中，用户可以通过 <b>语音与角色实时对话</b>，通过 <b>头部移动观察隐藏信息</b>，并直接影响剧情发展。<br />
+            <span class="intro-green">AI 会理解用户的表达与情绪，动态生成角色回应与剧情分支，让视频从被动观看变成主动参与。</span>
           </p>
         </section>
 
-        <section class="intro-grid" aria-label="核心入口">
-          <article class="intro-entry intro-entry-live">
-            <div>
-              <span class="intro-label">Live Demo</span>
-              <h2>最终展示页</h2>
-              <p>从已配置的场景组开始播放，包含视线追踪、场景音频、动态图层和对话跳转。</p>
-            </div>
-            <a href="./final.html">打开 final.html</a>
-          </article>
-          <div class="intro-demo-panel">
-            <div class="intro-section-head">
-              <span class="intro-label">Scene Group</span>
-              <h2>《主角》场景组演示</h2>
-            </div>
-            <iframe
-              class="intro-demo-frame"
-              title="《主角》场景组演示"
-              src="./intro-demo.html?group=t1-mpjcb34r"
-              allow="accelerometer; gyroscope; autoplay; fullscreen"
-              allowfullscreen
-            ></iframe>
-            <div class="intro-link-row">
-              <a href="./final.html" target="_blank" rel="noreferrer">PC端请点击，以获得完整体验</a>
-            </div>
-          </div>
-        </section>
-
-        <section class="intro-media" aria-label="演示视频和文档">
+        <section class="intro-work" aria-label="作品内容集合入口">
           <div class="intro-video-panel">
             <div class="intro-section-head">
               <span class="intro-label">Video</span>
@@ -89,54 +64,170 @@
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowfullscreen
             ></iframe>
+            <div class="intro-copy-block intro-copy-center">
+              <strong>视频介绍</strong>
+              <p>3分钟，带你了解这个项目</p>
+              <p class="intro-green">推荐观看！</p>
+            </div>
             <div class="intro-link-row">
-              <a
-                href="https://www.bilibili.com/video/BV1Qw4m1X7VW/"
-                target="_blank"
-                rel="noreferrer"
-              >
-                打开 Bilibili 视频
-              </a>
-              <a href="./final.html" target="_blank" rel="noreferrer">进入实时演示</a>
+              <a href="https://www.bilibili.com/video/BV1Qw4m1X7VW/" target="_blank" rel="noreferrer">打开 Bilibili 视频</a>
+            </div>
+          </div>
+
+          <div class="intro-grid intro-work-grid">
+            <article class="intro-entry intro-entry-live">
+              <div>
+                <span class="intro-label">Live Demo</span>
+                <h2>最终展示页</h2>
+                <div class="intro-copy-center">
+                  <p>在这个以荒岛求生为背景的故事中：</p>
+                <ul class="intro-list">
+                  <li>你可以直接与角色说话</li>
+                  <li>你的选择会改变剧情</li>
+                  <li>你可以通过移动视角观察环境</li>
+                  <li>一些隐藏信息，也许只有你能发现</li>
+                </ul>
+                <p class="intro-green">建议打开摄像头与麦克风</p>
+                <p class="intro-green">这一次，你不只是观众。</p>
+                <p><b>「最终展示页」，仅支持电脑浏览器体验。</b></p>
+                </div>
+              </div>
+              <a href="./final.html">打开 final.html</a>
+            </article>
+
+            <div class="intro-demo-panel">
+              <div class="intro-section-head">
+                <span class="intro-label">Mobile Demo</span>
+                <h2>手机端体验页</h2>
+              </div>
+              <iframe
+                class="intro-demo-frame"
+                title="手机端体验页"
+                src="./intro-demo.html?scene=快速体验沉浸式3d效果-起始场景-mpjlrel8"
+                allow="accelerometer; gyroscope; autoplay; fullscreen"
+                allowfullscreen
+              ></iframe>
+              <div class="intro-copy-block">
+                <p class="intro-green">手机端用户则可通过「手机端体验」Demo，摇晃手机，快速体验沉浸式3D核心玩法！</p>
+                <p>现在试试摇晃手机，看看画面中的人物在偷偷干些什么吧！</p>
+              </div>
+              <div class="intro-link-row">
+                <a href="./final.html" target="_blank" rel="noreferrer">PC端请点击，以获得完整体验</a>
+              </div>
             </div>
           </div>
         </section>
 
-        <section class="intro-doc-row" aria-label="演示文档">
-          <div class="intro-doc-panel">
+        <section class="intro-band intro-creation" aria-label="作品创作思路">
+          <div class="intro-creation-head">
             <div class="intro-section-head">
-              <span class="intro-label">Document</span>
-              <h2>演示文档</h2>
+              <span class="intro-label">Idea</span>
+              <h2>作品创作思路</h2>
             </div>
             <p>
-              文档包含本地运行方式、页面结构、API、场景数据、部署说明和常见问题，
-              适合作为评审或后续开发的技术说明入口。
+              很多时候，我们会在悬疑片里提前发现线索，会在误会桥段里忍不住替角色着急，也会在结局出现时希望“如果当时换个选择会怎样”。但传统视频始终是线性的，用户只能观看，而无法改变。
+              因此，我们希望尝试一种新的内容形态
             </p>
-            <a class="intro-doc-link" href="./README.md" target="_blank" rel="noreferrer">打开 README 演示文档</a>
           </div>
-        </section>
 
-        <section class="intro-flow" aria-label="体验流程">
-          <div class="intro-section-head">
-            <span class="intro-label">Flow</span>
-            <h2>推荐体验路径</h2>
+          <div class="intro-creation-links">
+            <article class="intro-entry">
+              <div>
+                <span class="intro-label">Document</span>
+                <h2>演示文档</h2>
+                <p>这个项目最初的出发点，其实来自一个很简单的问题：</p>
+                <p>为什么我们在看视频时，明明已经产生了自己的判断与情绪，却永远无法真正参与剧情？</p>
+                <p>因此，我们希望尝试一种新的内容形态。这个项目融合了三种能力：</p>
+                <ul class="intro-list">
+                  <li>通过裸眼3D增强“空间沉浸感”</li>
+                  <li>通过AI实时对话增强“角色参与感”</li>
+                  <li>通过多分支剧情增强“决策影响感”</li>
+                </ul>
+                <p class="intro-green">最终，我们构建出了一个基于 AI + 3D + 实时语音交互的互动叙事系统。</p>
+              </div>
+              <a href="./README.md" target="_blank" rel="noreferrer">打开 README 演示文档</a>
+            </article>
+            <article class="intro-entry">
+              <div>
+                <span class="intro-label">Editor</span>
+                <h2>场景编辑器</h2>
+                <p>我们不仅构建了互动视频体验，也开发了一套<b>低门槛创作工具</b>。</p>
+                <p>
+                  创作者可以通过<b>图层化编辑快速搭建3D空间场景</b>，通过<b>可视化方式配置剧情分支</b>，并结合<b> AI 自动生成角色对话与互动逻辑</b>。
+                </p>
+                <p class="intro-green">过去，互动叙事往往意味着高成本开发；而现在，它可以像剪视频一样被快速制作。</p>
+                <p><b>「编辑器」，仅支持电脑浏览器体验。</b></p>
+              </div>
+              <a href="./index.html" target="_blank" rel="noreferrer">打开编辑器</a>
+            </article>
           </div>
-          <ol>
-            <li>
-              <strong>项目总览</strong>
-              <span>从本页了解作品目标、材料入口和演示方式。</span>
-            </li>
-            <li>
-              <strong>最终展示</strong>
-              <span>进入 final 页，开启摄像头后体验头部/视线变化带来的空间跟随。</span>
-            </li>
-            <li>
-              <strong>编辑器配置</strong>
-              <span>进入编辑器查看场景组、素材图层、音频循环和分支跳转设置。</span>
-            </li>
-          </ol>
+
+          <div class="intro-idea-grid" aria-label="技术思路">
+            <article class="intro-idea-card">
+              <button class="intro-idea-toggle" type="button" aria-expanded="false">
+                <span>如何实现裸眼3D？</span>
+              </button>
+              <div class="intro-idea-content">
+                <p>系统通过调用浏览器摄像头，实时<b>获取用户头部位置与双眼相对距离</b>，并结合<b>视差（Parallax）原理</b>动态调整画面图层的位置变化。</p>
+                <p>在内容制作阶段，我们会将场景拆分为<b>前景、中景与背景</b>等多个空间层级。当用户左右移动头部时，不同图层会以不同速度偏移，从而模拟真实空间中的透视变化，形成裸眼3D效果。</p>
+                <p class="intro-green">相比传统3D电影，这种方式无需3D眼镜或VR设备，仅通过普通电脑摄像头即可获得空间沉浸体验。</p>
+              </div>
+            </article>
+            <article class="intro-idea-card">
+              <button class="intro-idea-toggle" type="button" aria-expanded="false">
+                <span>如何实现实时语音对话？</span>
+              </button>
+              <div class="intro-idea-content">
+                <p>用户的语音会首先通过<b>语音识别（ASR）转化为文本</b>，再发送至 <b>Kimi 大模型</b>进行语义理解与意图识别。</p>
+                <p>AI 会结合当前剧情状态、角色设定与世界观信息，实时生成符合人物性格的对话回复与剧情推进逻辑。</p>
+                <p>随后，系统调用<b>讯飞 TTS（语音合成）接口</b>，将生成内容实时转换为角色语音，并同步返回前端播放，<span class="intro-green">从而实现“用户说话—角色回应”的实时互动闭环。</span></p>
+              </div>
+            </article>
+            <article class="intro-idea-card">
+              <button class="intro-idea-toggle" type="button" aria-expanded="false">
+                <span>如何让剧情产生不同结局？</span>
+              </button>
+              <div class="intro-idea-content">
+                <p>系统内部构建了一套<b>剧情状态管理机制</b>。</p>
+                <p>用户在互动过程中的对话内容、行为倾向与关键选择，都会被记录为动态变量，并持续影响后续剧情发展。</p>
+                <p>因此，用户体验到的不只是“选项分支”，而是<span class="intro-green">一个会持续回应用户行为的<b>动态叙事系统</b>。</span></p>
+              </div>
+            </article>
+          </div>
+
+          <div class="intro-feature-video">
+            <div class="intro-section-head">
+              <span class="intro-label">Featured Video</span>
+              <h2>《主角》易青娥初次登台-沉浸感体验</h2>
+            </div>
+            <iframe
+              class="intro-network-video"
+              title="《主角》易青娥初次登台-沉浸感体验"
+              src="https://player.bilibili.com/player.html?isOutside=true&aid=1104217266&bvid=BV1Qw4m1X7VW&cid=1533784562&p=1"
+              scrolling="no"
+              frameborder="0"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowfullscreen
+            ></iframe>
+            <div class="intro-copy-block">
+              <p>我们还尝试将这套技术复用到已有影视内容中。</p>
+              <p>
+                在热播剧《主角》中，我们将易青娥第一次登台前的候场片段进行了3D化处理——当她紧张地望向戏台与台下时，用户也能像“附身”到角色身上一样，沉浸式体验登台前那一刻的呼吸与情绪。
+              </p>
+            </div>
+          </div>
         </section>
       </main>
     </div>
+    <script>
+      document.querySelectorAll(".intro-idea-card").forEach((card) => {
+        card.addEventListener("click", () => {
+          const button = card.querySelector(".intro-idea-toggle");
+          const open = !card.classList.contains("is-open");
+          card.classList.toggle("is-open", open);
+          button.setAttribute("aria-expanded", String(open));
+        });
+      });
+    </script>
   </body>
 </html>

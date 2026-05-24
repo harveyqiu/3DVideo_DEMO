@@ -941,11 +941,15 @@ async function loadInitialScene() {
   setLayoutStatus("正在读取布局");
   try {
     await loadSceneList();
-    await loadAppSettings();
+    if (isIntroDemo && urlParams.has("scene")) {
+      state.currentSceneId = urlParams.get("scene") || state.currentSceneId;
+    } else {
+      await loadAppSettings();
+    }
     if (isFinal) {
       resetFinalPlaybackState();
       state.currentSceneId = getFinalSceneGroup().finalStartSceneId || state.finalStartSceneId || "default";
-    } else if (isIntroDemo) {
+    } else if (isIntroDemo && !urlParams.has("scene")) {
       state.currentSceneId = getActiveSceneGroup().finalStartSceneId || state.finalStartSceneId || "default";
     }
     syncSceneControls();
