@@ -490,7 +490,6 @@
         <nav class="sidebar" aria-label="文档导航">
           <strong>目录</strong>
           <a href="#overview">项目定位</a>
-          <a href="#intro">Intro 新增内容</a>
           <a href="#entry">页面入口</a>
           <a href="#stack">技术栈</a>
           <a href="#files">文件地图</a>
@@ -544,40 +543,7 @@
             </div>
           </section>
 
-          <section id="intro">
-            <h2>Intro 新增内容</h2>
-            <p class="lead">
-              新增的 <code>intro.html</code> 已经从单纯入口页升级为项目总览页面。它承担“向观众解释作品是什么、怎么体验、为什么这样设计”的展示任务，并把 PC、移动端和创作工具串联起来。
-            </p>
-            <div class="grid grid-2">
-              <article class="card">
-                <h3>首屏项目叙事</h3>
-                <p>页面使用全屏视频背景和简短文案，把项目从“观看故事”转向“参与故事”的核心概念放在第一屏，同时提供最终展示页和编辑器两个入口。</p>
-              </article>
-              <article class="card">
-                <h3>作品内容集合</h3>
-                <p>介绍项目的三条体验主线：与角色实时对话、通过头部移动观察隐藏信息，以及让用户选择影响剧情发展。</p>
-              </article>
-              <article class="card">
-                <h3>演示视频与 Live Demo</h3>
-                <p>页面嵌入 Bilibili 介绍视频，并引导用户进入 <code>final.html</code>，体验以荒岛求生为背景的完整互动故事。</p>
-              </article>
-              <article class="card">
-                <h3>手机端快速体验</h3>
-                <p><code>intro-demo.html</code> 作为移动端嵌入体验，使用同一套 <code>src/app.js</code>，通过设备姿态快速展示沉浸式 3D 核心玩法。</p>
-              </article>
-              <article class="card">
-                <h3>创作思路</h3>
-                <p>Intro 页补充了作品动机：观众在观看悬疑、选择或情绪段落时本来就会产生判断，项目把这种判断转化为可被系统响应的输入。</p>
-              </article>
-              <article class="card">
-                <h3>技术问答</h3>
-                <p>新增折叠式说明卡，解释裸眼 3D、实时语音对话和不同结局三件事，适合给非技术观众快速理解项目。</p>
-              </article>
-            </div>
-          </section>
-
-          <section id="entry">
+          <section id=”entry”>
             <h2>页面入口</h2>
             <p class="lead">项目现在由多个 HTML 入口组成，但主要交互逻辑集中在同一个前端文件中，通过页面上的 <code>body[data-mode]</code> 区分运行模式。</p>
             <table>
@@ -686,6 +652,11 @@
               </thead>
               <tbody>
                 <tr>
+                  <td><code>/health</code></td>
+                  <td>GET</td>
+                  <td>服务健康检查；返回数据库状态，PM2 / 反向代理探活使用。</td>
+                </tr>
+                <tr>
                   <td><code>/api/layout</code></td>
                   <td>GET / POST / DELETE</td>
                   <td>读取、保存、删除场景布局；支持列表与详情读取。</td>
@@ -708,7 +679,22 @@
                 <tr>
                   <td><code>/api/tts</code></td>
                   <td>POST</td>
-                  <td>调用讯飞超拟人 TTS，返回可播放的音频。</td>
+                  <td>调用讯飞超拟人 TTS，返回完整音频 Buffer。</td>
+                </tr>
+                <tr>
+                  <td><code>/api/tts-stream</code></td>
+                  <td>POST</td>
+                  <td>讯飞 TTS 流式推送；以分块响应逐步将音频数据发回前端，降低首包延迟。</td>
+                </tr>
+                <tr>
+                  <td><code>/api/script-beats</code></td>
+                  <td>GET</td>
+                  <td>返回剧情节拍配置（<code>opening / choice / reveal / ending</code>），供编辑器填充导演提示。</td>
+                </tr>
+                <tr>
+                  <td><code>/api/log-error</code></td>
+                  <td>POST</td>
+                  <td>接收前端上报的运行时错误，写入服务端结构化日志。</td>
                 </tr>
               </tbody>
             </table>
@@ -748,10 +734,13 @@
               <article class="card">
                 <h3>场景字段</h3>
                 <ul>
-                  <li><code>scene.focal</code>、<code>scene.parallax</code> 控制透视和头动幅度。</li>
-                  <li><code>scene.audioAsset</code>、<code>audioLoop</code>、<code>gifLoop</code>、<code>webmLoop</code> 控制媒体播放。</li>
-                  <li><code>scene.flow</code> 决定场景结束后的跳转方式。</li>
-                  <li><code>items[]</code> 保存每个图层的位置、深度、缩放、旋转、倾斜和透明度。</li>
+                  <li><code>scene.focal</code>、<code>scene.parallax</code> 控制透视焦距和头动幅度。</li>
+                  <li><code>scene.audioAsset</code>、<code>audioLoop</code>、<code>gifLoop</code>、<code>webmLoop</code> 控制媒体播放与循环。</li>
+                  <li><code>scene.flow</code> 决定场景结束后的跳转方式（<code>none / auto / dialog</code>）及路由关键词。</li>
+                  <li><code>scene.xfyunVoice</code> 指定本场景使用的讯飞 TTS 声线。</li>
+                  <li><code>scene.ageRequired</code> 设定场景对应的剧情节拍阶段。</li>
+                  <li><code>scene.realtimeReply</code> 控制是否开启实时流式回复。</li>
+                  <li><code>items[]</code> 保存每个图层的位置、深度（<code>z</code>）、缩放、旋转、倾斜和透明度。</li>
                 </ul>
               </article>
               <article class="card">
@@ -830,7 +819,9 @@ http://127.0.0.1:5174/final.html</code></pre>
               <article class="card">
                 <h3>外部服务变量</h3>
                 <ul>
+                  <li><code>PORT</code>（默认 5174）</li>
                   <li><code>MOONSHOT_API_KEY</code>、<code>MOONSHOT_BASE_URL</code>、<code>KIMI_MODEL</code></li>
+                  <li><code>KIMI_TIMEOUT_MS</code>、<code>KIMI_MAX_TOKENS</code></li>
                   <li><code>XFYUN_APP_ID</code>、<code>XFYUN_API_KEY</code>、<code>XFYUN_API_SECRET</code></li>
                   <li><code>XFYUN_TTS_URL</code>、<code>XFYUN_TTS_VOICE</code></li>
                 </ul>
