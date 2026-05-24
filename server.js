@@ -149,6 +149,17 @@ async function handleLayout(request, response, url) {
     return;
   }
 
+  if (request.method === "DELETE") {
+    const id = sanitizeSceneId(url.searchParams.get("id") || "");
+    if (!id || id === "default") {
+      sendJson(response, 400, { error: "invalid_scene_id" });
+      return;
+    }
+    const deleted = await deleteLayoutPayload(id);
+    sendJson(response, 200, { ok: true, id, deleted });
+    return;
+  }
+
   sendJson(response, 405, { error: "method_not_allowed" });
 }
 
@@ -616,6 +627,14 @@ async function writeLayoutPayload(id, name, payload) {
     updatedAt: new Date().toISOString(),
   };
   await writeDatabase(db);
+}
+
+async function deleteLayoutPayload(id) {
+  const db = await readDatabase();
+  if (!db.layouts?.[id]) return false;
+  delete db.layouts[id];
+  await writeDatabase(db);
+  return true;
 }
 
 async function readSettings() {

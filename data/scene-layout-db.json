@@ -191,7 +191,7 @@
           }
         ]
       },
-      "updatedAt": "2026-05-24T04:51:37.828Z"
+      "updatedAt": "2026-05-24T05:18:42.958Z"
     },
     "w1-mos8b1bn": {
       "name": "W1",
@@ -2516,6 +2516,79 @@
         ]
       },
       "updatedAt": "2026-05-06T17:18:31.080Z"
+    },
+    "q1-mpjc7lru": {
+      "name": "Q1",
+      "payload": {
+        "id": "q1-mpjc7lru",
+        "name": "Q1",
+        "scene": {
+          "focal": 900,
+          "parallax": 74,
+          "showGrid": true,
+          "audioAsset": {
+            "key": "uploads/A1-1-1.mp3",
+            "name": "A1-1-1.mp3",
+            "url": "/uploads/A1-1-1.mp3",
+            "type": "audio/mpeg",
+            "size": 43935
+          },
+          "audioLoop": false,
+          "gifLoop": false,
+          "webmLoop": true,
+          "flow": {
+            "mode": "auto",
+            "nextSceneId": "w1-mos8b1bn",
+            "routes": []
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": [
+          {
+            "id": "e227c2ff-f7d2-4582-b128-5d3da235c9ff",
+            "name": "A1-1.mov",
+            "assetKey": "uploads/A1-1.mov",
+            "assetUrl": "/uploads/A1-1.mov",
+            "assetType": "video/quicktime",
+            "x": 0,
+            "y": 0,
+            "z": 136.8,
+            "scale": 1.2990000000000002,
+            "rotation": 0,
+            "tilt": 0,
+            "alpha": 1
+          }
+        ]
+      },
+      "updatedAt": "2026-05-24T05:28:56.076Z"
+    },
+    "t1-起始场景-mpjcb34r": {
+      "name": "t1 起始场景",
+      "payload": {
+        "id": "t1-起始场景-mpjcb34r",
+        "name": "t1 起始场景",
+        "scene": {
+          "focal": 860,
+          "parallax": 92,
+          "showGrid": true,
+          "audioAsset": null,
+          "audioLoop": true,
+          "gifLoop": true,
+          "webmLoop": true,
+          "flow": {
+            "mode": "none",
+            "nextSceneId": "",
+            "routes": []
+          },
+          "xfyunVoice": "x6_lingfeiyi_pro",
+          "ageRequired": false,
+          "realtimeReply": false
+        },
+        "items": []
+      },
+      "updatedAt": "2026-05-24T05:31:38.541Z"
     }
   },
   "settings": {
@@ -2525,8 +2598,18 @@
     "sceneGroups": [
       {
         "id": "default-group",
-        "name": "默认场景组",
+        "name": "荒岛求生",
         "finalStartSceneId": "a1-mos899qj"
+      },
+      {
+        "id": "主角-易青娥初次登台-沉浸感体验-mpjbw638",
+        "name": "《主角》易青娥初次登台-沉浸感体验",
+        "finalStartSceneId": "a1-mos899qj"
+      },
+      {
+        "id": "t1-mpjcb34r",
+        "name": "t1",
+        "finalStartSceneId": "t1-起始场景-mpjcb34r"
       }
     ]
   }

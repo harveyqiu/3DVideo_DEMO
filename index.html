@@ -45,6 +45,8 @@
                   </select>
                 </label>
                 <button id="newSceneGroupButton" type="button">新建场景组</button>
+                <button id="renameSceneGroupButton" type="button">重命名场景组</button>
+                <button id="deleteSceneGroupButton" type="button">删除场景组</button>
                 <label>
                   <span>Final 演示场景组</span>
                   <select id="finalSceneGroupSelect">
@@ -57,9 +59,13 @@
                     <option value="default">默认场景</option>
                   </select>
                 </label>
+                <div class="scene-group-category" aria-label="当前场景组分类">
+                  <span>组内场景</span>
+                  <div id="sceneGroupSceneList" class="scene-group-scene-list"></div>
+                </div>
                 <input id="sceneNameInput" type="text" value="默认场景" aria-label="场景名称" />
                 <label>
-                  <span>Final 首个场景</span>
+                  <span>当前组首个场景</span>
                   <select id="finalStartSceneSelect">
                     <option value="default">默认场景</option>
                   </select>
@@ -179,6 +185,14 @@
             <div id="mediaOverlay" class="media-overlay" aria-hidden="true"></div>
             <audio id="sceneAudio" preload="auto"></audio>
             <div id="stageSubtitle" class="stage-subtitle" aria-live="polite"></div>
+            <aside class="scene-logic-pane" aria-label="当前场景组逻辑关系">
+              <div class="scene-logic-head">
+                <strong>场景逻辑</strong>
+                <span id="sceneLogicGroupName">默认场景组</span>
+                <button id="sceneLogicToggle" type="button" aria-label="最小化场景逻辑">−</button>
+              </div>
+              <div id="sceneLogicGraph" class="scene-logic-graph"></div>
+            </aside>
           </main>
 
           <aside class="panel panel-right" aria-label="图层参数">
